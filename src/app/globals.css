@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --color-white: #ffffff;
+  --color-slate: #f8fafc;
+  --color-lime: #84cc16;
+  --color-lime-dark: #65a30d;
+  --color-gold: #b45309;
+  --color-charcoal: #0f172a;
+  --color-charcoal-muted: #334155;
+}
+
+@theme inline {
+  --color-background: var(--color-white);
+  --color-foreground: var(--color-charcoal);
+  --color-surface: var(--color-slate);
+  --color-primary: var(--color-lime);
+  --color-primary-dark: var(--color-lime-dark);
+  --color-accent: var(--color-gold);
+  --color-charcoal: var(--color-charcoal);
+  --color-muted: var(--color-charcoal-muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-slate);
+  color: var(--color-charcoal);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+.touch-target-lg {
+  min-height: 56px;
+  min-width: 56px;
+}
+
+.input-touch {
+  min-height: 52px;
+}
+
+.sheet-enter {
+  animation: sheet-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 240px 1fr 320px;
+    gap: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dashboard-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+}
