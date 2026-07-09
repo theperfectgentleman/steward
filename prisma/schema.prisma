@@ -56,6 +56,7 @@ model User {
   rsvps                EventRsvp[]
   attendances          Attendance[]
   createdMeetings      Meeting[]
+  feedback             CommitteeFeedback[]
 }
 
 model Committee {
@@ -73,6 +74,7 @@ model Committee {
   events    Event[]
   meetings  Meeting[]
   timelines TimelineGoal[]
+  feedback  CommitteeFeedback[]
 }
 
 model CommitteeMember {
@@ -175,4 +177,31 @@ model TimelineGoal {
   committeeId String
 
   committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+}
+
+enum FeedbackType {
+  ISSUE
+  SUGGESTION
+}
+
+enum FeedbackStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
+model CommitteeFeedback {
+  id          String         @id @default(cuid())
+  userId      String
+  committeeId String
+  type        FeedbackType
+  message     String
+  status      FeedbackStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, committeeId, createdAt])
+  @@index([committeeId, status, createdAt])
 }

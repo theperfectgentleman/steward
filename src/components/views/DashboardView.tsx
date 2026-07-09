@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { HealthRing } from "@/components/HealthRing";
 import { AlertFeed, type AlertItem } from "@/components/AlertFeed";
 import { TouchButton } from "@/components/TouchButton";
+import { FeedbackSubmitSheet } from "@/components/FeedbackSubmitSheet";
 import { useApp } from "@/providers/AppProvider";
 import { canViewAllCommittees } from "@/lib/types";
 import { FileDown } from "lucide-react";
@@ -85,6 +86,8 @@ export function DashboardView() {
             : "Your committee at a glance"}
         </p>
       </div>
+
+      <FeedbackSubmitSheet />
 
       {isExecutive && (
         <TouchButton size="lg" className="w-full sm:w-auto" onClick={handleExport}>
