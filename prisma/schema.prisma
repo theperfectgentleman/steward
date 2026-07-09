@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  CHURCH_EXECUTIVE
+  COMMITTEE_CHAIRPERSON
+  COMMITTEE_SECRETARY
+  COMMITTEE_MEMBER
+}
+
+enum CommitteeTitle {
+  CHAIR
+  SECRETARY
+  MEMBER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  EXCUSED
+  ABSENT
+  UNMARKED
+}
+
+enum RsvpStatus {
+  GOING
+  DECLINED
+  PENDING
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  role      UserRole @default(COMMITTEE_MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  committeeMemberships CommitteeMember[]
+  assignedTasks        Task[]            @relation("AssignedTasks")
+  createdTasks         Task[]            @relation("CreatedTasks")
+  rsvps                EventRsvp[]
+  attendances          Attendance[]
+  createdMeetings      Meeting[]
+  feedback             CommitteeFeedback[]
+}
+
+model Committee {
+  id                 String   @id @default(cuid())
+  charterLetter      String   @unique
+  name               String
+  description        String?
+  budget             Float?
+  reportingFrequency String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  members   CommitteeMember[]
+  tasks     Task[]
+  events    Event[]
+  meetings  Meeting[]
+  timelines TimelineGoal[]
+  feedback  CommitteeFeedback[]
+}
+
+model CommitteeMember {
+  id          String         @id @default(cuid())
+  userId      String
+  committeeId String
+  title       CommitteeTitle @default(MEMBER)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, committeeId])
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  status       TaskStatus @default(TODO)
+  dueDate      DateTime?
+  committeeId  String
+  assignedToId String?
+  createdById  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  committee  Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  assignedTo User?     @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy  User?     @relation("CreatedTasks", fields: [createdById], references: [id])
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  committeeId String
+  createdAt   DateTime  @default(now())
+
+  committee Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  rsvps     EventRsvp[]
+}
+
+model EventRsvp {
+  id      String     @id @default(cuid())
+  eventId String
+  userId  String
+  status  RsvpStatus @default(PENDING)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Meeting {
+  id          String   @id @default(cuid())
+  title       String
+  date        DateTime
+  committeeId String
+  createdById String
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  committee   Committee     @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  minutes     MinutePoint[]
+  attendances Attendance[]
+}
+
+model MinutePoint {
+  id        String @id @default(cuid())
+  content   String
+  order     Int
+  meetingId String
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+  id        String           @id @default(cuid())
+  meetingId String
+  userId    String
+  status    AttendanceStatus @default(UNMARKED)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+}
+
+model TimelineGoal {
+  id          String   @id @default(cuid())
+  title       String
+  startDate   DateTime
+  endDate     DateTime
+  progress    Int      @default(0)
+  committeeId String
+
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+}
+
+enum FeedbackType {
+  ISSUE
+  SUGGESTION
+}
+
+enum FeedbackStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
+model CommitteeFeedback {
+  id          String         @id @default(cuid())
+  userId      String
+  committeeId String
+  type        FeedbackType
+  message     String
+  status      FeedbackStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, committeeId, createdAt])
+  @@index([committeeId, status, createdAt])
+}
