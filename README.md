@@ -27,6 +27,7 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with a demo prof
 - **Touch-friendly UI** — 48px+ tap targets, bottom sheet navigation, lime/gold/charcoal design system
 - **RBAC** — Super Admin, Church Executive, Chair, Secretary, Member roles
 - **19 Committees** — Charter committees (a–s) with switcher sheet
+- **Feedback** — Report issues and suggestions to committees (with abuse prevention)
 - **Task Board** — Segmented status controls, assignment drawer
 - **Schedule** — Vertical agenda, RSVP toggles, timeline horizon
 - **Minutes** — Attendance grid, structured bullet points
