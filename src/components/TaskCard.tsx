@@ -5,6 +5,7 @@ import { SegmentedControl } from "./SegmentedControl";
 import { BottomSheet } from "./BottomSheet";
 import type { TaskStatus, UserRole } from "@/lib/types";
 import { TASK_STATUS_LABELS, TASK_STATUSES, canEditTasks } from "@/lib/types";
+import { Trash2 } from "lucide-react";
 
 type TaskCardProps = {
   id: string;
@@ -13,10 +14,13 @@ type TaskCardProps = {
   status: TaskStatus;
   dueDate?: string | null;
   assigneeName?: string | null;
+  assignedToId?: string | null;
+  currentUserId: string;
   userRole: UserRole;
   members?: { id: string; name: string }[];
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
+  onDelete?: (id: string) => void;
 };
 
 export function TaskCard({
@@ -26,21 +30,38 @@ export function TaskCard({
   status,
   dueDate,
   assigneeName,
+  assignedToId,
+  currentUserId,
   userRole,
   members = [],
   onStatusChange,
   onAssign,
+  onDelete,
 }: TaskCardProps) {
   const [assignOpen, setAssignOpen] = useState(false);
   const canAssign = canEditTasks(userRole);
-  const canUpdateStatus = canEditTasks(userRole) || userRole === "COMMITTEE_MEMBER";
+  const canUpdateStatus =
+    canEditTasks(userRole) ||
+    (userRole === "COMMITTEE_MEMBER" && assignedToId === currentUserId);
 
   return (
     <article className="bg-white rounded-2xl border-2 border-charcoal/10 p-5 space-y-4 shadow-sm">
-      <div>
-        <h3 className="text-lg font-bold text-charcoal">{title}</h3>
-        {description && (
-          <p className="text-sm text-muted mt-1 leading-relaxed">{description}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-lg font-bold text-charcoal">{title}</h3>
+          {description && (
+            <p className="text-sm text-muted mt-1 leading-relaxed">{description}</p>
+          )}
+        </div>
+        {canAssign && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(id)}
+            className="touch-target flex items-center justify-center rounded-xl text-muted hover:text-accent hover:bg-accent/10 shrink-0"
+            aria-label="Delete task"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
         )}
       </div>
 
@@ -89,6 +110,11 @@ export function TaskCard({
         title="Assign Task"
       >
         <ul className="space-y-4">
+          {members.length === 0 && (
+            <li className="text-sm text-muted text-center py-4">
+              No committee members assigned yet. Add members in Admin.
+            </li>
+          )}
           {members.map((m) => (
             <li key={m.id}>
               <button

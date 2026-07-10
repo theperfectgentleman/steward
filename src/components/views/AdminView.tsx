@@ -9,7 +9,7 @@ import { Check } from "lucide-react";
 type User = {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   role: UserRole;
 };
 
@@ -17,7 +17,12 @@ type Committee = {
   id: string;
   charterLetter: string;
   name: string;
+  budget?: number | null;
+  reportingFrequency?: string | null;
+  description?: string | null;
 };
+
+const REPORTING_OPTIONS = ["Weekly", "Biweekly", "Monthly", "Quarterly"];
 
 export function AdminView() {
   const [users, setUsers] = useState<User[]>([]);
@@ -27,10 +32,18 @@ export function AdminView() {
   const [title, setTitle] = useState<"CHAIR" | "SECRETARY" | "MEMBER">("MEMBER");
   const [form, setForm] = useState({ name: "", email: "", phone: "", role: "COMMITTEE_MEMBER" as UserRole });
   const [saving, setSaving] = useState(false);
+  const [editingCommittee, setEditingCommittee] = useState<string | null>(null);
+  const [metaForm, setMetaForm] = useState({
+    budget: "",
+    reportingFrequency: "Monthly",
+    description: "",
+  });
 
   const refresh = () => {
     fetch("/api/users").then((r) => r.json()).then(setUsers);
-    fetch("/api/committees?scope=all").then((r) => r.json()).then(setCommittees);
+    fetch("/api/committees?scope=all&meta=true")
+      .then((r) => r.json())
+      .then(setCommittees);
   };
 
   useEffect(() => {
@@ -82,11 +95,41 @@ export function AdminView() {
     });
   };
 
+  const openMetaEditor = (c: Committee) => {
+    setEditingCommittee(c.id);
+    setMetaForm({
+      budget: c.budget != null ? String(c.budget) : "",
+      reportingFrequency: c.reportingFrequency ?? "Monthly",
+      description: c.description ?? "",
+    });
+  };
+
+  const saveMeta = async () => {
+    if (!editingCommittee) return;
+    setSaving(true);
+    try {
+      await fetch("/api/committees", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingCommittee,
+          budget: metaForm.budget === "" ? null : Number(metaForm.budget),
+          reportingFrequency: metaForm.reportingFrequency,
+          description: metaForm.description || null,
+        }),
+      });
+      setEditingCommittee(null);
+      refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-charcoal">Admin</h1>
-        <p className="text-muted mt-1">User directory & committee pairing</p>
+        <p className="text-muted mt-1">User directory, pairing & committee config</p>
       </div>
 
       <section className="bg-white rounded-2xl border border-charcoal/10 p-5 space-y-4">
@@ -99,7 +142,7 @@ export function AdminView() {
               placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
               value={form[field]}
               onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-              className="w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none capitalize-placeholder"
+              className="w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
             />
           ))}
           <select
@@ -180,6 +223,96 @@ export function AdminView() {
         >
           Save Assignments
         </TouchButton>
+      </section>
+
+      <section className="bg-white rounded-2xl border border-charcoal/10 p-5 space-y-4">
+        <h2 className="font-bold text-charcoal">Committee Configuration</h2>
+        <p className="text-sm text-muted">
+          Set budgets and reporting frequencies for each of the 19 committees.
+        </p>
+        <ul className="space-y-3">
+          {committees.map((c) => (
+            <li key={c.id}>
+              {editingCommittee === c.id ? (
+                <div className="rounded-2xl border-2 border-primary p-4 space-y-3">
+                  <p className="font-bold text-charcoal">
+                    <span className="text-accent uppercase">{c.charterLetter}</span>{" "}
+                    {c.name}
+                  </p>
+                  <label className="block">
+                    <span className="text-sm font-semibold">Operational Budget</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={metaForm.budget}
+                      onChange={(e) =>
+                        setMetaForm({ ...metaForm, budget: e.target.value })
+                      }
+                      className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+                      placeholder="e.g. 5000"
+                    />
+                  </label>
+                  <div>
+                    <p className="text-sm font-semibold mb-2">Reporting Frequency</p>
+                    <SegmentedControl
+                      options={REPORTING_OPTIONS.map((o) => ({
+                        value: o,
+                        label: o,
+                      }))}
+                      value={metaForm.reportingFrequency}
+                      onChange={(v) =>
+                        setMetaForm({ ...metaForm, reportingFrequency: v })
+                      }
+                    />
+                  </div>
+                  <label className="block">
+                    <span className="text-sm font-semibold">Description</span>
+                    <input
+                      type="text"
+                      value={metaForm.description}
+                      onChange={(e) =>
+                        setMetaForm({ ...metaForm, description: e.target.value })
+                      }
+                      className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+                    />
+                  </label>
+                  <div className="flex gap-3">
+                    <TouchButton className="flex-1" disabled={saving} onClick={saveMeta}>
+                      Save
+                    </TouchButton>
+                    <TouchButton
+                      variant="ghost"
+                      className="flex-1"
+                      onClick={() => setEditingCommittee(null)}
+                    >
+                      Cancel
+                    </TouchButton>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openMetaEditor(c)}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-charcoal/10 hover:border-accent touch-target-lg text-left"
+                >
+                  <span className="font-bold text-accent uppercase w-6">
+                    {c.charterLetter}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{c.name}</p>
+                    <p className="text-xs text-muted">
+                      {c.reportingFrequency ?? "No frequency"}
+                      {c.budget != null
+                        ? ` · Budget $${c.budget.toLocaleString()}`
+                        : ""}
+                    </p>
+                  </div>
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   );

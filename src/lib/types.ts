@@ -29,6 +29,7 @@ export const TASK_STATUSES: TaskStatus[] = [
   "DONE",
 ];
 
+/** Chair / Secretary / Super Admin — create, assign, edit tasks & schedules */
 export function canEditTasks(role: UserRole): boolean {
   return (
     role === "SUPER_ADMIN" ||
@@ -37,10 +38,33 @@ export function canEditTasks(role: UserRole): boolean {
   );
 }
 
+/** Chair / Secretary / Super Admin — log meetings & attendance */
+export function canLogMinutes(role: UserRole): boolean {
+  return canEditTasks(role);
+}
+
+/** Chair / Super Admin — formally approve filed minutes */
+export function canApproveMinutes(role: UserRole): boolean {
+  return role === "SUPER_ADMIN" || role === "COMMITTEE_CHAIRPERSON";
+}
+
 export function canViewAllCommittees(role: UserRole): boolean {
   return role === "SUPER_ADMIN" || role === "CHURCH_EXECUTIVE";
 }
 
 export function canManageUsers(role: UserRole): boolean {
   return role === "SUPER_ADMIN";
+}
+
+/** Executives are read-only; everyone else may RSVP to events */
+export function canRsvp(role: UserRole): boolean {
+  return role !== "CHURCH_EXECUTIVE";
+}
+
+export function canReviewFeedback(role: UserRole): boolean {
+  return canViewAllCommittees(role) || canEditTasks(role);
+}
+
+export function isReadOnlyExecutive(role: UserRole): boolean {
+  return role === "CHURCH_EXECUTIVE";
 }

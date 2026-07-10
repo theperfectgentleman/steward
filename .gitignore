@@ -20,6 +20,9 @@
 # next.js build output
 /build
 
+# deploy control script runtime (pids, logs)
+/.deploy/
+
 # misc
 .DS_Store
 *.pem

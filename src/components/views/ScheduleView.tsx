@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useApp } from "@/providers/AppProvider";
-import { canViewAllCommittees } from "@/lib/types";
+import { useCommitteeContext } from "@/hooks/useCommitteeContext";
+import { canEditTasks, canRsvp } from "@/lib/types";
+import { TimelineEditor } from "@/components/TimelineEditor";
+import { TouchButton } from "@/components/TouchButton";
+import { BottomSheet } from "@/components/BottomSheet";
+import { Plus } from "lucide-react";
 
 type EventItem = {
   id: string;
@@ -10,6 +15,7 @@ type EventItem = {
   description: string | null;
   startDate: string;
   committee: { name: string; charterLetter: string };
+  rsvps?: { userId: string; status: string; user?: { id: string; name: string } }[];
 };
 
 type TimelineGoal = {
@@ -20,52 +26,115 @@ type TimelineGoal = {
   progress: number;
 };
 
-export function ScheduleView() {
-  const { user, activeCommitteeId } = useApp();
+export function ScheduleView({ committeeId }: { committeeId: string }) {
+  const { user } = useApp();
+  const { committee } = useCommitteeContext();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [goals, setGoals] = useState<TimelineGoal[]>([]);
   const [rsvps, setRsvps] = useState<Record<string, "GOING" | "DECLINED">>({});
+  const [createOpen, setCreateOpen] = useState(false);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [eventDesc, setEventDesc] = useState("");
 
-  const isGlobal = user && canViewAllCommittees(user.role);
+  const canEdit = !!(user && canEditTasks(user.role));
+  const showRsvp = !!(user && canRsvp(user.role));
 
-  useEffect(() => {
-    const committeeParam = isGlobal ? "" : `committeeId=${activeCommitteeId}`;
-    const globalParam = isGlobal ? "global=true" : "";
-    const qs = [committeeParam, globalParam].filter(Boolean).join("&");
+  const load = useCallback(() => {
+    if (!user || !committeeId) return;
 
-    fetch(`/api/events?${qs}`)
+    fetch(`/api/events?committeeId=${committeeId}`)
       .then((r) => r.json())
-      .then(setEvents)
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setEvents(data);
+          const mine: Record<string, "GOING" | "DECLINED"> = {};
+          for (const ev of data as EventItem[]) {
+            const match = ev.rsvps?.find(
+              (r) => r.userId === user.id || r.user?.id === user.id,
+            );
+            if (match && (match.status === "GOING" || match.status === "DECLINED")) {
+              mine[ev.id] = match.status;
+            }
+          }
+          setRsvps(mine);
+        } else {
+          setEvents([]);
+        }
+      })
       .catch(() => setEvents([]));
 
-    if (activeCommitteeId && !isGlobal) {
-      fetch(`/api/timeline?committeeId=${activeCommitteeId}`)
-        .then((r) => r.json())
-        .then(setGoals)
-        .catch(() => setGoals([]));
-    } else if (isGlobal) {
-      fetch("/api/timeline")
-        .then((r) => r.json())
-        .then(setGoals)
-        .catch(() => setGoals([]));
-    }
-  }, [activeCommitteeId, isGlobal]);
+    fetch(`/api/timeline?committeeId=${committeeId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setGoals(data);
+        else setGoals([]);
+      })
+      .catch(() => setGoals([]));
+  }, [committeeId, user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleRsvp = async (eventId: string, status: "GOING" | "DECLINED") => {
     if (!user) return;
     await fetch("/api/events/rsvp", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId, userId: user.id, status }),
+      body: JSON.stringify({ eventId, status }),
     });
     setRsvps((prev) => ({ ...prev, [eventId]: status }));
   };
 
+  const saveGoal = async (goal: TimelineGoal) => {
+    await fetch("/api/timeline", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: goal.id,
+        progress: goal.progress,
+        startDate: goal.startDate,
+        endDate: goal.endDate,
+      }),
+    });
+    load();
+  };
+
+  const createEvent = async () => {
+    if (!eventTitle.trim() || !eventDate || !committeeId) return;
+    await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: eventTitle.trim(),
+        description: eventDesc.trim() || undefined,
+        startDate: new Date(eventDate).toISOString(),
+        committeeId,
+      }),
+    });
+    setEventTitle("");
+    setEventDate("");
+    setEventDesc("");
+    setCreateOpen(false);
+    load();
+  };
+
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-charcoal">Schedule</h1>
-        <p className="text-muted mt-1">Upcoming events and deadlines</p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-charcoal">Schedule</h1>
+          <p className="text-muted mt-1">
+            {committee?.name ?? "Committee"} — events and deadlines
+          </p>
+        </div>
+        {canEdit && (
+          <TouchButton onClick={() => setCreateOpen(true)}>
+            <Plus className="h-5 w-5" />
+            Event
+          </TouchButton>
+        )}
       </div>
 
       {goals.length > 0 && (
@@ -74,25 +143,12 @@ export function ScheduleView() {
             Timeline Horizon
           </h2>
           {goals.map((g) => (
-            <div
+            <TimelineEditor
               key={g.id}
-              className="bg-white rounded-2xl border border-charcoal/10 p-5 space-y-3"
-            >
-              <div className="flex justify-between items-start gap-2">
-                <h3 className="font-bold text-charcoal">{g.title}</h3>
-                <span className="text-sm font-semibold text-accent">{g.progress}%</span>
-              </div>
-              <div className="h-4 rounded-full bg-primary/30 overflow-hidden">
-                <div
-                  className="h-full bg-accent rounded-full transition-all"
-                  style={{ width: `${g.progress}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted">
-                {new Date(g.startDate).toLocaleDateString()} —{" "}
-                {new Date(g.endDate).toLocaleDateString()}
-              </p>
-            </div>
+              goal={g}
+              canEdit={canEdit}
+              onSave={saveGoal}
+            />
           ))}
         </section>
       )}
@@ -108,10 +164,7 @@ export function ScheduleView() {
               className="bg-white rounded-2xl border border-charcoal/10 p-5 space-y-4"
             >
               <div>
-                <p className="text-xs font-bold text-accent uppercase">
-                  {ev.committee.charterLetter}) {ev.committee.name}
-                </p>
-                <h3 className="text-lg font-bold text-charcoal mt-1">{ev.title}</h3>
+                <h3 className="text-lg font-bold text-charcoal">{ev.title}</h3>
                 {ev.description && (
                   <p className="text-sm text-muted mt-1">{ev.description}</p>
                 )}
@@ -126,7 +179,7 @@ export function ScheduleView() {
                 </time>
               </div>
 
-              {user?.role === "COMMITTEE_MEMBER" && (
+              {showRsvp && (
                 <div className="flex gap-3">
                   <button
                     type="button"
@@ -159,6 +212,42 @@ export function ScheduleView() {
           <p className="text-center text-muted py-8">No upcoming events.</p>
         )}
       </section>
+
+      <BottomSheet open={createOpen} onClose={() => setCreateOpen(false)} title="New Event">
+        <div className="space-y-4">
+          <label className="block">
+            <span className="text-sm font-semibold">Title</span>
+            <input
+              type="text"
+              value={eventTitle}
+              onChange={(e) => setEventTitle(e.target.value)}
+              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+              placeholder="e.g. Site walkthrough"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-semibold">Date & Time</span>
+            <input
+              type="datetime-local"
+              value={eventDate}
+              onChange={(e) => setEventDate(e.target.value)}
+              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-semibold">Description (optional)</span>
+            <input
+              type="text"
+              value={eventDesc}
+              onChange={(e) => setEventDesc(e.target.value)}
+              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+            />
+          </label>
+          <TouchButton size="lg" className="w-full" onClick={createEvent}>
+            Create Event
+          </TouchButton>
+        </div>
+      </BottomSheet>
     </div>
   );
 }

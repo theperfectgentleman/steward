@@ -1,20 +1,36 @@
 import { NextResponse } from "next/server";
+import { getSessionUser, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { canManageUsers, type UserRole } from "@/lib/types";
 
 export async function GET() {
+  // Demo login picker is unauthenticated — return id/name/role only.
+  // Signed-in super admins also receive email for the admin directory.
+  const session = await getSessionUser();
+  const isAdmin = session ? canManageUsers(session.role) : false;
+
   const users = await prisma.user.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true, email: true, role: true },
+    select: {
+      id: true,
+      name: true,
+      email: isAdmin,
+      role: true,
+    },
   });
+
   return NextResponse.json(users);
 }
 
 export async function POST(request: Request) {
+  const auth = await requireRoles(["SUPER_ADMIN"]);
+  if (auth.error) return auth.error;
+
   const body = (await request.json()) as {
     name?: string;
     email?: string;
     phone?: string;
-    role?: string;
+    role?: UserRole;
   };
 
   if (!body.name || !body.email || !body.role) {
@@ -26,7 +42,7 @@ export async function POST(request: Request) {
       name: body.name,
       email: body.email,
       phone: body.phone,
-      role: body.role as "SUPER_ADMIN" | "CHURCH_EXECUTIVE" | "COMMITTEE_CHAIRPERSON" | "COMMITTEE_SECRETARY" | "COMMITTEE_MEMBER",
+      role: body.role,
     },
   });
 

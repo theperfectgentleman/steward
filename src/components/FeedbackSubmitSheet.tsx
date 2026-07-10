@@ -20,8 +20,12 @@ type Committee = {
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
-export function FeedbackSubmitSheet() {
-  const { user, activeCommitteeId } = useApp();
+export function FeedbackSubmitSheet({
+  committeeId: fixedCommitteeId,
+}: {
+  committeeId?: string;
+}) {
+  const { user } = useApp();
   const [open, setOpen] = useState(false);
   const [committees, setCommittees] = useState<Committee[]>([]);
   const [committeeId, setCommitteeId] = useState("");
@@ -40,14 +44,14 @@ export function FeedbackSubmitSheet() {
       .then((r) => r.json())
       .then((data: Committee[]) => {
         setCommittees(data);
-        if (activeCommitteeId && data.some((c) => c.id === activeCommitteeId)) {
-          setCommitteeId(activeCommitteeId);
+        if (fixedCommitteeId && data.some((c) => c.id === fixedCommitteeId)) {
+          setCommitteeId(fixedCommitteeId);
         } else if (data[0]) {
           setCommitteeId(data[0].id);
         }
       })
       .catch(() => setCommittees([]));
-  }, [user, activeCommitteeId, open]);
+  }, [user, fixedCommitteeId, open]);
 
   const resetForm = () => {
     setType("SUGGESTION");
@@ -159,6 +163,7 @@ export function FeedbackSubmitSheet() {
               />
             </div>
 
+            {!fixedCommitteeId && (
             <div>
               <label
                 htmlFor="feedback-committee"
@@ -179,6 +184,7 @@ export function FeedbackSubmitSheet() {
                 ))}
               </select>
             </div>
+            )}
 
             <div>
               <label

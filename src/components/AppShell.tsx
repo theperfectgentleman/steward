@@ -1,47 +1,27 @@
 "use client";
 
+import { SidebarNav } from "./layout/SidebarNav";
+import { CommitteePanel } from "./layout/CommitteePanel";
+import { TopBar } from "./layout/TopBar";
 import { BottomNav } from "./BottomNav";
-import { CommitteeSwitcher } from "./CommitteeSwitcher";
 import { useApp } from "@/providers/AppProvider";
-import { LogOut } from "lucide-react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useApp();
+  const { user } = useApp();
 
   if (!user) return <>{children}</>;
 
   return (
-    <div className="flex flex-col min-h-dvh pb-20">
-      <header className="sticky top-0 z-30 bg-white border-b border-charcoal/10 px-4 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-accent uppercase tracking-wider">
-              UnityCommit
-            </p>
-            <CommitteeSwitcher />
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden sm:block text-right">
-              <p className="text-sm font-semibold text-charcoal truncate max-w-[120px]">
-                {user.name}
-              </p>
-              <p className="text-xs text-muted capitalize">
-                {user.role.replace(/_/g, " ").toLowerCase()}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="touch-target flex items-center justify-center rounded-xl bg-surface border border-charcoal/10"
-              aria-label="Sign out"
-            >
-              <LogOut className="h-5 w-5 text-muted" />
-            </button>
-          </div>
-        </div>
-      </header>
-      <main className="flex-1 px-4 py-5 max-w-5xl mx-auto w-full">{children}</main>
-      <BottomNav role={user.role} />
+    <div className="flex min-h-dvh">
+      <SidebarNav role={user.role} />
+      <CommitteePanel />
+      <div className="flex flex-col flex-1 min-w-0 pb-20 lg:pb-0">
+        <TopBar />
+        <main className="flex-1 px-4 py-5 lg:px-6 lg:py-6 w-full max-w-6xl mx-auto">
+          {children}
+        </main>
+        <BottomNav role={user.role} />
+      </div>
     </div>
   );
 }

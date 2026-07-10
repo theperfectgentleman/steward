@@ -198,3 +198,54 @@ export async function POST(request: Request) {
 
   return NextResponse.json(feedback, { status: 201 });
 }
+
+export async function PATCH(request: Request) {
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
+  const canReview =
+    canViewAllCommittees(user.role) || canEditTasks(user.role);
+  if (!canReview) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+
+  const body = (await request.json()) as {
+    id?: string;
+    status?: "PENDING" | "REVIEWED" | "DISMISSED";
+  };
+
+  if (!body.id || !body.status) {
+    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  if (!["PENDING", "REVIEWED", "DISMISSED"].includes(body.status)) {
+    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
+  const existing = await prisma.committeeFeedback.findUnique({
+    where: { id: body.id },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "Feedback not found" }, { status: 404 });
+  }
+
+  if (
+    !canViewAllCommittees(user.role) &&
+    !user.committeeMemberships.some((m) => m.committeeId === existing.committeeId)
+  ) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+
+  const feedback = await prisma.committeeFeedback.update({
+    where: { id: body.id },
+    data: { status: body.status },
+    include: {
+      user: { select: { name: true, email: true } },
+      committee: { select: { name: true, charterLetter: true } },
+    },
+  });
+
+  return NextResponse.json(feedback);
+}
