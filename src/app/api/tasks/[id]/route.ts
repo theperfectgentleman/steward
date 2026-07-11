@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  assertCommitteeMutation,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canEditTasks, type TaskStatus } from "@/lib/types";
+import {
+  canEditTasks,
+  getCommitteeTitle,
+  type TaskStatus,
+} from "@/lib/types";
 
 export async function PATCH(
   request: Request,
@@ -13,9 +18,6 @@ export async function PATCH(
 ) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
-
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
 
   const { id } = await params;
   const body = (await request.json()) as {
@@ -28,15 +30,19 @@ export async function PATCH(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
+  const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
+  if (mutation) return mutation;
+
   const access = assertCommitteeAccess(auth.user, existing.committeeId);
   if (access) return access;
 
-  const isEditor = canEditTasks(auth.user.role);
+  const perm = asPermissionUser(auth.user);
+  const isEditor = canEditTasks(perm, existing.committeeId);
   const isAssignee =
-    auth.user.role === "COMMITTEE_MEMBER" &&
+    getCommitteeTitle(perm, existing.committeeId) === "MEMBER" &&
     existing.assignedToId === auth.user.id;
   const isSubtaskCreator =
-    auth.user.role === "COMMITTEE_MEMBER" &&
+    getCommitteeTitle(perm, existing.committeeId) === "MEMBER" &&
     existing.parentId !== null &&
     existing.createdById === auth.user.id;
 
@@ -74,17 +80,18 @@ export async function DELETE(
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canEditTasks(auth.user.role)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
   const { id } = await params;
   const existing = await prisma.task.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
+  if (mutation) return mutation;
+
+  const perm = asPermissionUser(auth.user);
+  if (!canEditTasks(perm, existing.committeeId)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const access = assertCommitteeAccess(auth.user, existing.committeeId);

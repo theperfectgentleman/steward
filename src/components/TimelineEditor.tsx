@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { BottomSheet } from "./BottomSheet";
 import { TouchButton } from "./TouchButton";
+import { DateInput } from "./DateInput";
 import { SegmentedControl } from "./SegmentedControl";
+import { formatDate } from "@/lib/dates";
 
 type TimelineGoal = {
   id: string;
@@ -79,8 +81,7 @@ export function TimelineEditor({ goal, canEdit, onSave }: Props) {
           />
         </div>
         <p className="text-xs text-muted">
-          {new Date(goal.startDate).toLocaleDateString()} —{" "}
-          {new Date(goal.endDate).toLocaleDateString()}
+          {formatDate(goal.startDate)} — {formatDate(goal.endDate)}
           {canEdit && (
             <span className="text-accent font-semibold"> · Tap to adjust</span>
           )}
@@ -138,22 +139,22 @@ export function TimelineEditor({ goal, canEdit, onSave }: Props) {
 
           <label className="block">
             <span className="text-sm font-semibold">Start Date</span>
-            <input
-              type="date"
+            <div className="mt-2">
+            <DateInput
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
             />
+            </div>
           </label>
 
           <label className="block">
             <span className="text-sm font-semibold">End Date</span>
-            <input
-              type="date"
+            <div className="mt-2">
+            <DateInput
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
             />
+            </div>
           </label>
 
           <TouchButton

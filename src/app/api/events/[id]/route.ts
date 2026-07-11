@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  assertCommitteeMutation,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { getEventWithProgress } from "@/lib/event-queries";
@@ -34,17 +35,18 @@ export async function PATCH(
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canEditTasks(auth.user.role)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
   const { id } = await params;
   const existing = await prisma.event.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  }
+
+  const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
+  if (mutation) return mutation;
+
+  const perm = asPermissionUser(auth.user);
+  if (!canEditTasks(perm, existing.committeeId)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const access = assertCommitteeAccess(auth.user, existing.committeeId);

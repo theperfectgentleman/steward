@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  assertCommitteeMutation,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -14,10 +15,13 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const eventId = searchParams.get("eventId");
+  const projectId = searchParams.get("projectId");
+  const assignedToMe = searchParams.get("assignedToMe") === "true";
   const global = searchParams.get("global") === "true";
+  const perm = asPermissionUser(auth.user);
 
   if (global) {
-    if (!canViewAllCommittees(auth.user.role)) {
+    if (!canViewAllCommittees(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
     const tasks = await prisma.task.findMany({
@@ -25,6 +29,7 @@ export async function GET(request: Request) {
         committee: { select: { name: true, charterLetter: true } },
         assignedTo: { select: { name: true } },
         event: { select: { id: true, title: true } },
+        project: { select: { id: true, title: true } },
         subtasks: {
           include: { assignedTo: { select: { id: true, name: true } } },
         },
@@ -45,11 +50,24 @@ export async function GET(request: Request) {
     where: {
       committeeId,
       ...(eventId ? { eventId } : {}),
+      ...(projectId ? { projectId } : {}),
+      ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
       parentId: null,
+      ...(searchParams.get("standalone") === "true" ? { projectId: null } : {}),
+      ...(searchParams.get("inProject") === "true" ? { projectId: { not: null } } : {}),
     },
     include: {
       assignedTo: { select: { id: true, name: true } },
       event: { select: { id: true, title: true } },
+      project: {
+        select: {
+          id: true,
+          title: true,
+          assignmentId: true,
+          assignment: { select: { id: true, status: true } },
+        },
+      },
+      assignmentAsRoot: { select: { id: true, status: true } },
       subtasks: {
         include: { assignedTo: { select: { id: true, name: true } } },
         orderBy: { createdAt: "asc" },
@@ -65,14 +83,12 @@ export async function POST(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
   const body = (await request.json()) as {
     title?: string;
     description?: string;
     committeeId?: string;
     eventId?: string;
+    projectId?: string;
     parentId?: string;
     dueDate?: string;
     assignedToId?: string;
@@ -82,10 +98,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
+  const mutation = assertCommitteeMutation(auth.user, body.committeeId);
+  if (mutation) return mutation;
+
   const access = assertCommitteeAccess(auth.user, body.committeeId);
   if (access) return access;
 
-  const isEditor = canEditTasks(auth.user.role);
+  const perm = asPermissionUser(auth.user);
+  const isEditor = canEditTasks(perm, body.committeeId);
   const isSubtask = !!body.parentId;
 
   if (isSubtask) {
@@ -102,6 +122,7 @@ export async function POST(request: Request) {
       );
     }
     body.eventId = body.eventId ?? parent.eventId ?? undefined;
+    body.projectId = body.projectId ?? parent.projectId ?? undefined;
   } else if (!isEditor) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
@@ -121,6 +142,7 @@ export async function POST(request: Request) {
       description: body.description,
       committeeId: body.committeeId,
       eventId: body.eventId ?? null,
+      projectId: body.projectId ?? null,
       parentId: body.parentId ?? null,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
       assignedToId: body.assignedToId ?? null,
@@ -129,6 +151,7 @@ export async function POST(request: Request) {
     include: {
       assignedTo: { select: { id: true, name: true } },
       event: { select: { id: true, title: true } },
+      project: { select: { id: true, title: true } },
       subtasks: {
         include: { assignedTo: { select: { id: true, name: true } } },
       },

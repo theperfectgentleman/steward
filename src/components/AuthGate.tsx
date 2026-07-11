@@ -1,16 +1,50 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useApp } from "@/providers/AppProvider";
 import { AppShell } from "@/components/AppShell";
 import { LoginPicker } from "@/components/LoginPicker";
+import { PageLoader } from "@/components/loading/PageShimmer";
+import {
+  dismissBootSplash,
+  getLogoEntranceMs,
+  isStandalonePwa,
+} from "@/lib/splash";
+
+let entranceAnimationPlayed = false;
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useApp();
+  const [entranceDone, setEntranceDone] = useState(entranceAnimationPlayed);
 
-  if (loading) {
+  useEffect(() => {
+    document.documentElement.setAttribute("data-splash-owned", "1");
+    return () => document.documentElement.removeAttribute("data-splash-owned");
+  }, []);
+
+  useEffect(() => {
+    if (entranceAnimationPlayed) {
+      setEntranceDone(true);
+      return;
+    }
+    const base = getLogoEntranceMs();
+    const ms = isStandalonePwa() ? base + 280 : base;
+    const timer = window.setTimeout(() => {
+      entranceAnimationPlayed = true;
+      setEntranceDone(true);
+    }, ms);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (loading || !entranceDone) return;
+    dismissBootSplash();
+  }, [loading, entranceDone]);
+
+  if (loading || !entranceDone) {
     return (
-      <div className="min-h-dvh flex items-center justify-center text-muted">
-        Loading…
+      <div className="min-h-dvh bg-surface" aria-busy="true" aria-label="Loading Steward">
+        <PageLoader label={loading ? "Signing in…" : "Loading Steward…"} />
       </div>
     );
   }

@@ -2,13 +2,16 @@
 
 
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { TaskCard } from "@/components/TaskCard";
 
 import { KanbanColumn } from "@/components/KanbanColumn";
 
 import { TouchButton } from "@/components/TouchButton";
+import { DateInput } from "@/components/DateInput";
+import { FORM_FIELD_CLASS, FORM_FILTER_CLASS } from "@/lib/form-field";
 
 import { BottomSheet } from "@/components/BottomSheet";
 
@@ -16,7 +19,8 @@ import { useApp } from "@/providers/AppProvider";
 
 import { useCommitteeContext } from "@/hooks/useCommitteeContext";
 
-import { canEditTasks, type TaskStatus } from "@/lib/types";
+import { canEditTasks, getCommitteeTitle, type TaskStatus } from "@/lib/types";
+import { toPermissionUser } from "@/lib/permissions-client";
 
 import { KANBAN_COLUMNS } from "@/lib/kanban";
 
@@ -54,6 +58,15 @@ type Task = {
 
   event: { id: string; title: string } | null;
 
+  project?: {
+    id: string;
+    title: string;
+    assignmentId?: string | null;
+    assignment?: { id: string; status: string } | null;
+  } | null;
+
+  assignmentAsRoot?: { id: string; status: string } | null;
+
   subtasks: Subtask[];
 
 };
@@ -70,7 +83,8 @@ type Member = { id: string; name: string };
 
 export function TasksView({ committeeId }: { committeeId: string }) {
 
-  const { user } = useApp();
+  const { user, refreshAttention } = useApp();
+  const searchParams = useSearchParams();
 
   const { committee } = useCommitteeContext();
 
@@ -79,6 +93,12 @@ export function TasksView({ committeeId }: { committeeId: string }) {
   const [events, setEvents] = useState<EventOption[]>([]);
 
   const [eventFilter, setEventFilter] = useState<string>("all");
+  const initialFilter = searchParams.get("filter");
+  const [taskFilter, setTaskFilter] = useState<"mine" | "all" | "standalone" | "project">(
+    initialFilter === "all" || initialFilter === "standalone" || initialFilter === "project"
+      ? initialFilter
+      : "mine",
+  );
 
   const [members, setMembers] = useState<Member[]>([]);
 
@@ -87,21 +107,19 @@ export function TasksView({ committeeId }: { committeeId: string }) {
   const [newTitle, setNewTitle] = useState("");
 
   const [newDueDate, setNewDueDate] = useState("");
-
-
+  const deepLinkTaskId = searchParams.get("task");
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
+  const taskRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const loadTasks = useCallback(() => {
 
     if (!committeeId) return;
 
-    const qs =
-
-      eventFilter !== "all"
-
-        ? `committeeId=${committeeId}&eventId=${eventFilter}`
-
-        : `committeeId=${committeeId}`;
-
+    const qs = new URLSearchParams({ committeeId });
+    if (eventFilter !== "all") qs.set("eventId", eventFilter);
+    if (taskFilter === "mine") qs.set("assignedToMe", "true");
+    if (taskFilter === "standalone") qs.set("standalone", "true");
+    if (taskFilter === "project") qs.set("inProject", "true");
     fetch(`/api/tasks?${qs}`)
 
       .then((r) => r.json())
@@ -116,7 +134,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
       .catch(() => setTasks([]));
 
-  }, [committeeId, eventFilter]);
+  }, [committeeId, eventFilter, taskFilter]);
 
 
 
@@ -126,7 +144,43 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
   }, [loadTasks]);
 
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setCreateOpen(true);
+    }
+  }, [searchParams]);
 
+  const columnParam = searchParams.get("column") as TaskStatus | null;
+
+  useEffect(() => {
+    if (
+      !columnParam ||
+      !["TODO", "IN_PROGRESS", "BLOCKED", "DONE"].includes(columnParam)
+    ) {
+      return;
+    }
+    setTaskFilter("all");
+    const timer = setTimeout(() => {
+      document
+        .getElementById(`kanban-column-${columnParam}`)
+        ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [columnParam, tasks.length]);
+
+  useEffect(() => {
+    if (!deepLinkTaskId || tasks.length === 0) return;
+    setTaskFilter("all");
+    setHighlightedTaskId(deepLinkTaskId);
+    const el = taskRefs.current[deepLinkTaskId];
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+    const timer = setTimeout(() => setHighlightedTaskId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [deepLinkTaskId, tasks]);
 
   useEffect(() => {
 
@@ -206,6 +260,29 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
     loadTasks();
 
+  };
+
+  const reviewableStatuses = new Set(["ACCEPTED", "IN_PROGRESS", "RETURNED"]);
+
+  const getReviewAssignmentId = (task: Task) => {
+    const fromProject = task.project?.assignment;
+    if (fromProject && reviewableStatuses.has(fromProject.status)) {
+      return fromProject.id;
+    }
+    if (task.assignmentAsRoot && reviewableStatuses.has(task.assignmentAsRoot.status)) {
+      return task.assignmentAsRoot.id;
+    }
+    return null;
+  };
+
+  const submitAssignmentReview = async (assignmentId: string) => {
+    await fetch("/api/assignments", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: assignmentId, action: "submit_review" }),
+    });
+    refreshAttention();
+    loadTasks();
   };
 
 
@@ -306,7 +383,9 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
 
 
-  const canDelete = canEditTasks(user.role);
+  const perm = user ? toPermissionUser(user) : null;
+  const canDelete = perm ? canEditTasks(perm, committeeId) : false;
+  const canCreate = perm ? canEditTasks(perm, committeeId) : false;
 
 
 
@@ -316,21 +395,11 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
 
-        <div>
+        <p className="text-sm text-muted">
+          Drag-free board — move tasks via the status menu on each card
+        </p>
 
-          <h1 className="text-2xl font-bold text-charcoal">Task Board</h1>
-
-          <p className="text-muted text-sm mt-1">
-
-            {committee?.name ?? "Committee"} — drag-free board; move tasks via
-
-            the status menu on each card
-
-          </p>
-
-        </div>
-
-        {canEditTasks(user.role) && (
+        {canCreate && (
 
           <TouchButton onClick={() => setCreateOpen(true)}>
 
@@ -346,7 +415,21 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
 
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+
+        <label className="text-xs font-bold text-accent uppercase tracking-wider shrink-0">
+          Filter
+        </label>
+        <select
+          value={taskFilter}
+          onChange={(e) => setTaskFilter(e.target.value as "mine" | "all" | "standalone" | "project")}
+          className={FORM_FILTER_CLASS}
+        >
+          <option value="mine">Assigned to me</option>
+          <option value="all">All tasks</option>
+          <option value="project">Project tasks</option>
+          <option value="standalone">Standalone only</option>
+        </select>
 
         <label className="text-xs font-bold text-accent uppercase tracking-wider shrink-0">
 
@@ -360,7 +443,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
           onChange={(e) => setEventFilter(e.target.value)}
 
-          className="flex-1 max-w-xs px-3 py-2 rounded-xl border border-charcoal/10 font-semibold text-sm bg-white"
+          className={`flex-1 max-w-xs ${FORM_FILTER_CLASS}`}
 
         >
 
@@ -386,13 +469,24 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
         {tasks.map((task) => (
 
-          <div key={task.id} className="space-y-3">
+          <div
+            key={task.id}
+            ref={(el) => {
+              taskRefs.current[task.id] = el;
+            }}
+            className={`space-y-3 transition-shadow rounded-2xl ${
+              highlightedTaskId === task.id
+                ? "ring-2 ring-primary ring-offset-2"
+                : ""
+            }`}
+          >
 
             <TaskCard
 
               layout="card"
 
               id={task.id}
+              committeeId={committeeId}
 
               title={task.title}
 
@@ -408,7 +502,8 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
               currentUserId={user.id}
 
-              userRole={user.role}
+              canEdit={canCreate}
+              isAssignee={task.assignedTo?.id === user.id}
 
               members={members}
 
@@ -421,6 +516,10 @@ export function TasksView({ committeeId }: { committeeId: string }) {
               onAssign={assignTask}
 
               onDelete={canDelete ? deleteTask : undefined}
+
+              reviewAssignmentId={getReviewAssignmentId(task)}
+
+              onSubmitReview={submitAssignmentReview}
 
             />
 
@@ -444,7 +543,8 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
                 currentUserId={user.id}
 
-                userRole={user.role}
+                canEdit={canCreate}
+              isAssignee={sub.assignedTo?.id === user.id}
 
                 members={members}
 
@@ -498,9 +598,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
             }))}
 
             userId={user.id}
-
-            userRole={user.role}
-
+            canEdit={canCreate}
             members={members}
 
             onStatusChange={updateStatus}
@@ -549,7 +647,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
               onChange={(e) => setNewTitle(e.target.value)}
 
-              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
+              className={`mt-2 ${FORM_FIELD_CLASS}`}
 
               placeholder="e.g. Soundboard Installation"
 
@@ -561,15 +659,13 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
             <span className="text-xs font-bold text-accent uppercase tracking-wider">Due Date</span>
 
-            <input
-
-              type="date"
+            <DateInput
 
               value={newDueDate}
 
               onChange={(e) => setNewDueDate(e.target.value)}
 
-              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
+              className={`mt-2 ${FORM_FIELD_CLASS}`}
 
             />
 

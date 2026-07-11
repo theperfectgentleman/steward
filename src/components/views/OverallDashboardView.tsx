@@ -3,19 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ClipboardCheck, FileText, MessageSquarePlus } from "lucide-react";
 import { AlertFeed, type AlertItem } from "@/components/AlertFeed";
-import { KpiCard } from "@/components/KpiCard";
-import { TouchButton } from "@/components/TouchButton";
-import { FeedbackSubmitSheet } from "@/components/FeedbackSubmitSheet";
-import { FeedbackReviewSheet } from "@/components/FeedbackReviewSheet";
+import { MyWorkHub } from "@/components/MyWorkHub";
+import { DashboardStatsPanel } from "@/components/DashboardStatsPanel";
+import { QuickActionLink } from "@/components/QuickActionLink";
 import { useApp } from "@/providers/AppProvider";
+import { toPermissionUser } from "@/lib/permissions-client";
 import {
-  canReviewFeedback,
+  canCreatePresbyteryAssignment,
   canViewAllCommittees,
 } from "@/lib/types";
-import { buildTextPdf } from "@/lib/pdf";
-import { committeePath } from "@/lib/navigation";
-import { FileDown, ChevronRight } from "lucide-react";
+import { formatDate } from "@/lib/dates";
+import { buildOverallDashboardStats } from "@/lib/dashboard-kpis";
+import { assignWorkPath, committeePath, documentsPath, suggestionsPath } from "@/lib/navigation";
 
 type CommitteeStat = {
   id: string;
@@ -24,39 +25,51 @@ type CommitteeStat = {
   total: number;
   done: number;
   blocked: number;
+  activeProjects?: number;
   meetingCount?: number;
 };
+
+type PipelineRow = { status: string; _count: number };
 
 export function OverallDashboardView() {
   const router = useRouter();
   const { user } = useApp();
   const [stats, setStats] = useState<CommitteeStat[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const isExecutive = user && canViewAllCommittees(user.role);
-  const canReview = user && canReviewFeedback(user.role);
+  const [pipeline, setPipeline] = useState<PipelineRow[]>([]);
+  const [awaitingClose, setAwaitingClose] = useState<
+    { id: string; title: string; targetCommittee: { id: string; name: string } }[]
+  >([]);
+  const [assignmentDrafts, setAssignmentDrafts] = useState(0);
+
+  const perm = user ? toPermissionUser(user) : null;
+  const isExecutive = perm && canViewAllCommittees(perm);
+  const canAssign = perm && canCreatePresbyteryAssignment(perm);
 
   const loadDashboard = useCallback(() => {
     fetch("/api/dashboard")
       .then((r) => r.json())
       .then((data) => {
         setStats(data.stats ?? []);
+        setPipeline(data.assignmentPipeline ?? []);
+        setAwaitingClose(data.awaitingMyClose ?? []);
+        setAssignmentDrafts(data.myAssignmentDrafts ?? 0);
         setAlerts(
-          (data.alerts ?? []).map((a: AlertItem & { time: string }) => ({
+          (data.alerts ?? []).map((a: AlertItem & { time: string; href?: string }) => ({
             ...a,
-            href: a.committeeId
-              ? committeePath(
-                  a.committeeId,
-                  a.type === "minutes"
-                    ? "minutes"
-                    : a.type === "blocked" || a.type === "completed"
-                      ? "tasks"
-                      : undefined,
-                )
-              : a.href,
-            time: new Date(a.time).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            }),
+            href:
+              a.href ??
+              (a.committeeId
+                ? committeePath(
+                    a.committeeId,
+                    a.type === "minutes"
+                      ? "minutes"
+                      : a.type === "blocked" || a.type === "completed"
+                        ? "tasks"
+                        : undefined,
+                  )
+                : undefined),
+            time: formatDate(a.time),
           })),
         );
       })
@@ -79,43 +92,59 @@ export function OverallDashboardView() {
   );
 
   const pendingMinutes = alerts.filter((a) => a.type === "minutes").length;
+  const openAssignments = pipeline
+    .filter((p) => !["CLOSED", "CANCELLED"].includes(p.status))
+    .reduce((n, p) => n + p._count, 0);
 
-  const handleExport = () => {
-    const lines = [
-      `Generated: ${new Date().toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })}`,
-      "",
-      "Committee Progress Summary",
-      "-------------------------",
-      ...stats.map((s) => {
-        const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-        return `${s.charterLetter.toUpperCase()}) ${s.name}: ${s.done}/${s.total} complete (${pct}%), ${s.blocked} blocked`;
-      }),
-      "",
-      `Overall: ${totals.done}/${totals.total} tasks complete, ${totals.blocked} blocked`,
-    ];
-    const blob = buildTextPdf("UnityCommit — Monthly Presbytery Report", lines);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `presbytery-report-${new Date().toISOString().slice(0, 7)}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const kpiSections = buildOverallDashboardStats({
+    stats,
+    alerts,
+    totals,
+    pendingMinutes,
+    openAssignments,
+    awaitingCloseCount: awaitingClose.length,
+    assignmentDrafts,
+    perm,
+  });
 
   const handleAlertClick = (alert: AlertItem) => {
-    if (alert.committeeId) {
-      localStorage.setItem("unitycommit-committee", alert.committeeId);
-      router.push(alert.href ?? committeePath(alert.committeeId));
+    if (alert.href) {
+      if (alert.committeeId) {
+        localStorage.setItem("unitycommit-committee", alert.committeeId);
+      }
+      router.push(alert.href);
     }
   };
 
+  const quickActions = [
+    canAssign
+      ? {
+          key: "assign",
+          href: assignWorkPath(),
+          label: "Assign work",
+          icon: ClipboardCheck,
+        }
+      : null,
+    {
+      key: "suggestions",
+      href: suggestionsPath(),
+      label: "Suggestions",
+      icon: MessageSquarePlus,
+    },
+    user?.role !== "SYSTEM_ADMIN"
+      ? {
+          key: "documents",
+          href: documentsPath(),
+          label: "Documents",
+          icon: FileText,
+        }
+      : null,
+  ].filter((action): action is { key: string; href: string; label: string; icon: typeof FileText } => action != null);
+
   return (
     <div className="space-y-6">
+      <MyWorkHub />
+
       <div>
         <h1 className="text-2xl font-bold text-charcoal">
           {isExecutive ? "Presbytery Dashboard" : "Overall Dashboard"}
@@ -127,86 +156,117 @@ export function OverallDashboardView() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Committees" value={stats.length} accent="gold" />
-        <KpiCard
-          label="Tasks Complete"
-          value={`${totals.done}/${totals.total}`}
-          hint={totals.total ? `${Math.round((totals.done / totals.total) * 100)}% overall` : undefined}
-          accent="lime"
-        />
-        <KpiCard
-          label="Blocked"
-          value={totals.blocked}
-          hint={totals.blocked > 0 ? "Needs attention" : "All clear"}
-          accent={totals.blocked > 0 ? "gold" : "charcoal"}
-        />
-        <KpiCard
-          label="Pending Minutes"
-          value={pendingMinutes}
-          accent="charcoal"
-        />
-      </div>
+      <DashboardStatsPanel
+        attention={kpiSections.attention}
+        snapshot={kpiSections.snapshot}
+        attentionTitle="Needs your attention"
+        snapshotTitle={isExecutive ? "Church-wide snapshot" : "At a glance"}
+      />
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <FeedbackSubmitSheet />
-        {canReview && <FeedbackReviewSheet />}
-      </div>
+      {quickActions.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+            Quick actions
+          </h2>
+          <div
+            className={`grid grid-cols-1 gap-3 ${
+              quickActions.length >= 3
+                ? "sm:grid-cols-3"
+                : quickActions.length === 2
+                  ? "sm:grid-cols-2"
+                  : ""
+            }`}
+          >
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <QuickActionLink key={action.key} href={action.href}>
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {action.label}
+                </QuickActionLink>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
-      {isExecutive && (
-        <TouchButton size="lg" className="w-full sm:w-auto" onClick={handleExport}>
-          <FileDown className="h-5 w-5" />
-          Export Monthly Presbytery Report
-        </TouchButton>
+      {isExecutive && awaitingClose.length > 0 && (
+        <section
+          id="dashboard-awaiting-close"
+          className="rounded-2xl border border-accent/30 bg-accent/5 p-4 space-y-3"
+        >
+          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+            Awaiting my close ({awaitingClose.length})
+          </h2>
+          <ul className="space-y-2">
+            {awaitingClose.map((a) => (
+              <li key={a.id}>
+                <Link
+                  href={`/assignments/${a.id}?action=close`}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-white border border-charcoal/10 px-4 py-3 touch-target-lg hover:border-primary/40"
+                >
+                  <span className="font-semibold text-charcoal truncate">{a.title}</span>
+                  <span className="text-xs text-muted shrink-0">
+                    {a.targetCommittee.name}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <section className="lg:col-span-2 space-y-4">
+        <section id="dashboard-committees" className="lg:col-span-2 space-y-4">
           <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
             Committees
           </h2>
-          <div className="bg-white rounded-2xl border border-charcoal/5 overflow-hidden shadow-xs">
-            <ul className="divide-y divide-charcoal/5">
+          {stats.length === 0 ? (
+            <p className="text-center text-muted py-12 rounded-2xl border border-charcoal/5 bg-white">
+              No committee data yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {stats.map((s) => {
                 const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
                 return (
-                  <li key={s.id}>
-                    <Link
-                      href={committeePath(s.id)}
-                      onClick={() => localStorage.setItem("unitycommit-committee", s.id)}
-                      className="flex items-center gap-4 p-5 hover:bg-slate-50 transition-colors touch-target-lg"
-                    >
-                      <span className="w-10 h-10 flex items-center justify-center rounded-xl bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0">
+                  <Link
+                    key={s.id}
+                    href={committeePath(s.id)}
+                    onClick={() => localStorage.setItem("unitycommit-committee", s.id)}
+                    className="flex flex-col gap-2 rounded-2xl border border-charcoal/5 bg-white p-4 shadow-xs hover:border-primary/30 transition-colors touch-target-lg"
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <span className="w-9 h-9 flex items-center justify-center rounded-xl bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0 text-sm">
                         {s.charterLetter}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between gap-2">
-                          <p className="font-semibold text-charcoal truncate">{s.name}</p>
-                          <span className="text-xs font-bold text-charcoal">{pct}%</span>
+                          <p className="font-semibold text-charcoal text-sm leading-snug line-clamp-2">
+                            {s.name}
+                          </p>
+                          <span className="text-xs font-bold text-charcoal shrink-0">{pct}%</span>
                         </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-muted font-medium mt-1.5">
-                          {s.done}/{s.total} tasks complete · {s.blocked} blocked
-                        </p>
                       </div>
-                      <ChevronRight className="h-5 w-5 text-muted shrink-0 ml-1" />
-                    </Link>
-                  </li>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted font-medium">
+                      {s.done}/{s.total} tasks · {s.blocked} awaiting
+                      {s.activeProjects != null && ` · ${s.activeProjects} projects`}
+                    </p>
+                  </Link>
                 );
               })}
-            </ul>
-            {stats.length === 0 && (
-              <p className="text-center text-muted py-12">No committee data yet.</p>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
-        <section className="space-y-4">
+        <section id="dashboard-alerts" className="space-y-4">
           <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
             Alert Feed
           </h2>

@@ -9,7 +9,7 @@ type TouchButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants = {
-  primary: "bg-primary text-charcoal font-semibold hover:bg-primary-dark",
+  primary: "bg-primary text-white font-semibold hover:bg-primary-dark",
   secondary: "bg-accent text-white font-semibold hover:opacity-90",
   ghost: "bg-white text-charcoal border-2 border-charcoal/10 hover:border-charcoal/20",
   danger: "bg-charcoal text-white font-semibold hover:opacity-90",

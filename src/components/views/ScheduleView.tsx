@@ -4,9 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppProvider";
-import { useCommitteeContext } from "@/hooks/useCommitteeContext";
 import { canEditTasks, canRsvp } from "@/lib/types";
+import { toPermissionUser } from "@/lib/permissions-client";
 import { TouchButton } from "@/components/TouchButton";
+import { DateInput } from "@/components/DateInput";
+import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
+import { formatDateTimeWithWeekday } from "@/lib/dates";
 import { BottomSheet } from "@/components/BottomSheet";
 import { Plus, ChevronRight } from "lucide-react";
 
@@ -25,7 +28,6 @@ type EventItem = {
 export function ScheduleView({ committeeId }: { committeeId: string }) {
   const router = useRouter();
   const { user } = useApp();
-  const { committee } = useCommitteeContext();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [rsvps, setRsvps] = useState<Record<string, "GOING" | "DECLINED">>({});
   const [createOpen, setCreateOpen] = useState(false);
@@ -34,8 +36,9 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
   const [eventDesc, setEventDesc] = useState("");
   const [createError, setCreateError] = useState("");
 
-  const canEdit = !!(user && canEditTasks(user.role));
-  const showRsvp = !!(user && canRsvp(user.role));
+  const perm = user ? toPermissionUser(user) : null;
+  const canEdit = !!(perm && canEditTasks(perm, committeeId));
+  const showRsvp = !!(perm && canRsvp(perm));
 
   const load = useCallback(() => {
     if (!user || !committeeId) return;
@@ -109,12 +112,7 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-charcoal">Schedule</h1>
-          <p className="text-muted mt-1">
-            {committee?.name ?? "Committee"} — events and deadlines
-          </p>
-        </div>
+        <p className="text-sm text-muted">Events and deadlines</p>
         {canEdit && (
           <TouchButton onClick={() => setCreateOpen(true)}>
             <Plus className="h-5 w-5" />
@@ -146,13 +144,7 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
                       </p>
                     )}
                     <time className="text-xs font-semibold text-muted bg-slate-50 border border-charcoal/5 px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 mt-3">
-                      {new Date(ev.startDate).toLocaleString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTimeWithWeekday(ev.startDate)}
                     </time>
                   </div>
                   <ChevronRight className="h-5 w-5 text-muted shrink-0 mt-1" />
@@ -183,7 +175,7 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
                     onClick={() => handleRsvp(ev.id, "GOING")}
                     className={`flex-1 touch-target-lg rounded-xl font-bold border transition-all cursor-pointer ${
                       rsvps[ev.id] === "GOING"
-                        ? "bg-primary border-primary text-charcoal shadow-2xs"
+                        ? "bg-primary border-primary text-white shadow-2xs"
                         : "bg-white border-charcoal/10 hover:border-primary text-charcoal-muted"
                     }`}
                   >
@@ -220,18 +212,19 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
               type="text"
               value={eventTitle}
               onChange={(e) => setEventTitle(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
+              className={`mt-2 ${FORM_FIELD_CLASS}`}
               placeholder="e.g. Site walkthrough"
             />
           </label>
           <label className="block">
             <span className="text-xs font-bold text-accent uppercase tracking-wider">Date & Time</span>
-            <input
+            <div className="mt-2">
+            <DateInput
               type="datetime-local"
               value={eventDate}
               onChange={(e) => setEventDate(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
             />
+            </div>
           </label>
           <label className="block">
             <span className="text-xs font-bold text-accent uppercase tracking-wider">
@@ -242,7 +235,7 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
               onChange={(e) => setEventDesc(e.target.value)}
               rows={4}
               placeholder="Describe the event in detail — used for AI task generation."
-              className="mt-2 w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base"
+              className={`mt-2 ${FORM_TEXTAREA_CLASS}`}
             />
           </label>
           {createError && (

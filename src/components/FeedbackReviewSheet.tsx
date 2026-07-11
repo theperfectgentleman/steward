@@ -6,6 +6,7 @@ import { BottomSheet } from "./BottomSheet";
 import { TouchButton } from "./TouchButton";
 import { useApp } from "@/providers/AppProvider";
 import { FEEDBACK_TYPE_LABELS, type FeedbackType } from "@/lib/feedback";
+import { formatDateTime } from "@/lib/dates";
 
 type FeedbackItem = {
   id: string;
@@ -19,8 +20,10 @@ type FeedbackItem = {
 
 export function FeedbackReviewSheet({
   committeeId: fixedCommitteeId,
+  triggerClassName = "",
 }: {
   committeeId?: string;
+  triggerClassName?: string;
 }) {
   const { activeCommitteeId } = useApp();
   const [open, setOpen] = useState(false);
@@ -64,15 +67,14 @@ export function FeedbackReviewSheet({
     <>
       <TouchButton
         size="lg"
-        variant="secondary"
-        className="w-full"
+        className={`text-sm sm:text-base ${triggerClassName}`}
         onClick={() => setOpen(true)}
       >
-        <Inbox className="h-5 w-5" />
-        Review Feedback{pending > 0 ? ` (${pending})` : ""}
+        <Inbox className="h-5 w-5 shrink-0" />
+        Review suggestions{pending > 0 ? ` (${pending})` : ""}
       </TouchButton>
 
-      <BottomSheet open={open} onClose={() => setOpen(false)} title="Feedback Inbox">
+      <BottomSheet open={open} onClose={() => setOpen(false)} title="Suggestion inbox">
         <div className="space-y-4">
           {loading && (
             <p className="text-center text-muted py-6">Loading…</p>
@@ -106,7 +108,7 @@ export function FeedbackReviewSheet({
               </p>
               <p className="text-sm text-charcoal leading-relaxed">{item.message}</p>
               <time className="text-xs text-muted block">
-                {new Date(item.createdAt).toLocaleString()}
+                {formatDateTime(item.createdAt)}
               </time>
               {item.status === "PENDING" && (
                 <div className="flex gap-3 pt-1">

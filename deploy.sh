@@ -185,7 +185,7 @@ do_db_setup() {
     warn "node_modules missing — installing first…"
     npm install
   fi
-  info "Running migrations + seed…"
+  info "Running migrations + seed (idempotent)…"
   npm run db:setup
   ok "Database ready."
 }
@@ -193,6 +193,7 @@ do_db_setup() {
 do_db_migrate() {
   require_node || return 1
   require_env || return 1
+  info "Applying pending migrations…"
   npm run db:migrate
   ok "Migrations applied."
 }
@@ -200,8 +201,22 @@ do_db_migrate() {
 do_db_seed() {
   require_node || return 1
   require_env || return 1
+  info "Ensuring seed data (idempotent)…"
   npm run db:seed
-  ok "Seed data loaded."
+  ok "Seed data ensured."
+}
+
+do_db_seed_reset() {
+  require_node || return 1
+  require_env || return 1
+  warn "This wipes all data and reseeds from scratch."
+  read -r -p "Continue? [y/N] " confirm
+  if [[ ! "${confirm:-}" =~ ^[Yy]$ ]]; then
+    info "Cancelled."
+    return 0
+  fi
+  npm run db:seed:reset
+  ok "Database reset and reseeded."
 }
 
 do_start_dev() {
@@ -308,12 +323,13 @@ ${c_bold}Build & deps${c_reset}
 ${c_bold}Database${c_reset}
  10) Full DB setup (migrate + seed)
  11) Run migrations only
- 12) Seed database only
+ 12) Seed database only (idempotent)
+ 13) Reset & reseed database (destructive)
 
 ${c_bold}Logs & info${c_reset}
- 13) View / follow dev logs
- 14) View / follow prod logs
- 15) Refresh status
+ 14) View / follow dev logs
+ 15) View / follow prod logs
+ 16) Refresh status
 
   0) Exit
 EOF
@@ -339,9 +355,10 @@ run_menu() {
       10) do_db_setup; pause ;;
       11) do_db_migrate; pause ;;
       12) do_db_seed; pause ;;
-      13) tail_log "$DEV_LOG" "dev"; pause ;;
-      14) tail_log "$PROD_LOG" "prod"; pause ;;
-      15) ;; # refresh on next loop
+      13) do_db_seed_reset; pause ;;
+      14) tail_log "$DEV_LOG" "dev"; pause ;;
+      15) tail_log "$PROD_LOG" "prod"; pause ;;
+      16) ;; # refresh on next loop
       0|q|Q|exit) ok "Goodbye."; exit 0 ;;
       *) err "Invalid option: ${choice:-}"; pause ;;
     esac
@@ -364,9 +381,10 @@ Commands:
   stop:all              Stop all servers
   build                 Production build
   install               npm install
-  db:setup              Migrate + seed
-  db:migrate            Migrate only
-  db:seed               Seed only
+  db:setup              Migrate + seed (idempotent)
+  db:migrate            Apply pending migrations
+  db:seed               Ensure seed data (idempotent)
+  db:seed:reset         Wipe and reseed (destructive)
   lint                  Run ESLint
   logs | logs:dev       Tail dev logs
   logs:prod             Tail prod logs
@@ -393,6 +411,7 @@ main() {
     db:setup)     do_db_setup ;;
     db:migrate)   do_db_migrate ;;
     db:seed)      do_db_seed ;;
+    db:seed:reset) do_db_seed_reset ;;
     lint)         do_lint ;;
     logs|logs:dev) tail_log "$DEV_LOG" "dev" ;;
     logs:prod)    tail_log "$PROD_LOG" "prod" ;;

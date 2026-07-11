@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  assertCommitteeMutation,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -10,13 +11,6 @@ import { canLogMinutes } from "@/lib/types";
 export async function PATCH(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
-
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canLogMinutes(auth.user.role)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
 
   const body = (await request.json()) as {
     meetingId?: string;
@@ -33,6 +27,14 @@ export async function PATCH(request: Request) {
   });
   if (!meeting) {
     return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+  }
+
+  const mutation = assertCommitteeMutation(auth.user, meeting.committeeId);
+  if (mutation) return mutation;
+
+  const perm = asPermissionUser(auth.user);
+  if (!canLogMinutes(perm, meeting.committeeId)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const access = assertCommitteeAccess(auth.user, meeting.committeeId);

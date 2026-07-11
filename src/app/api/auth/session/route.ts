@@ -1,64 +1,27 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserId } from "@/lib/auth";
+import { toSessionPayload } from "@/lib/session";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get("userId");
-
+export async function GET() {
+  const userId = await getSessionUserId();
   if (!userId) {
-    return NextResponse.json({ error: "userId required" }, { status: 400 });
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { committeeMemberships: true },
+    include: {
+      committeeMemberships: true,
+      presbyteryMembership: true,
+    },
   });
 
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!user || user.status === "DISABLED") {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  return NextResponse.json({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    committeeIds: user.committeeMemberships.map((m) => m.committeeId),
-  });
-}
-
-export async function POST(request: Request) {
-  const { userId } = (await request.json()) as { userId?: string };
-
-  if (!userId) {
-    return NextResponse.json({ error: "userId required" }, { status: 400 });
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { committeeMemberships: true },
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
-  const response = NextResponse.json({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    committeeIds: user.committeeMemberships.map((m) => m.committeeId),
-  });
-
-  response.cookies.set("unitycommit-user", userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30,
-    path: "/",
-  });
-
-  return response;
+  return NextResponse.json(toSessionPayload(user));
 }
 
 export async function DELETE() {

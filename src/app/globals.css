@@ -1,26 +1,33 @@
 @import "tailwindcss";
 
+/*
+  Brand emerald from the Steward logo (lighter green in the mark).
+  Do NOT name tokens "lime" — that collides with Tailwind's built-in lime (#84cc16).
+*/
+@theme inline {
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-surface: #f0f3f6;
+  --color-primary: #2f9e7a;
+  --color-primary-dark: #247a5e;
+  --color-accent: #b45309;
+  --color-charcoal: #0f172a;
+  --color-muted: #475569;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
 :root {
   --color-white: #ffffff;
-  --color-slate: #f0f3f6; /* Modern, soft blue-gray background */
-  --color-lime: #84cc16;
-  --color-lime-dark: #65a30d;
+  --color-slate: #f0f3f6;
+  --color-brand: #2f9e7a;
+  --color-brand-dark: #247a5e;
   --color-gold: #b45309;
   --color-charcoal: #0f172a;
   --color-charcoal-muted: #475569;
-}
-
-@theme inline {
-  --color-background: var(--color-white);
-  --color-foreground: var(--color-charcoal);
-  --color-surface: var(--color-slate);
-  --color-primary: var(--color-lime);
-  --color-primary-dark: var(--color-lime-dark);
-  --color-accent: var(--color-gold);
-  --color-charcoal: var(--color-charcoal);
-  --color-muted: var(--color-charcoal-muted);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Ensure runtime utilities always resolve to brand emerald */
+  --color-primary: #2f9e7a;
+  --color-primary-dark: #247a5e;
 }
 
 /* Base button and interactive transitions */
@@ -65,6 +72,96 @@ body {
   animation: modal-in 0.2s ease-out;
 }
 
+.logo-entrance {
+  /* Kinetic spin: accelerate in, coast, overshoot, settle */
+  animation: logo-spin-in 1.9s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+  will-change: transform, opacity;
+  border-radius: 50%;
+}
+
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: var(--color-slate);
+  pointer-events: none;
+}
+
+.boot-splash-mark {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.boot-splash-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.boot-splash-brand {
+  margin: 0;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-charcoal-muted);
+  opacity: 0;
+  animation: logo-fade-in 0.55s ease-out 0.85s both;
+}
+
+.boot-splash-exit {
+  animation: boot-splash-out 0.28s ease-in forwards;
+}
+
+@keyframes boot-splash-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes logo-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-charcoal) 6%, transparent) 0%,
+    color-mix(in srgb, var(--color-charcoal) 12%, transparent) 50%,
+    color-mix(in srgb, var(--color-charcoal) 6%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+  }
+}
+
 @keyframes sheet-up {
   from {
     transform: translateY(100%);
@@ -85,6 +182,36 @@ body {
   }
 }
 
+@keyframes logo-spin-in {
+  0% {
+    opacity: 0;
+    transform: rotate(-540deg) scale(0.55);
+  }
+  55% {
+    opacity: 1;
+  }
+  78% {
+    transform: rotate(14deg) scale(1.12);
+  }
+  90% {
+    transform: rotate(-5deg) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-entrance {
+    animation: logo-fade-in 0.35s ease-out both;
+  }
+
+  .boot-splash-brand {
+    animation: logo-fade-in 0.3s ease-out both;
+  }
+}
+
 @media (min-width: 1024px) {
   .app-shell-main {
     min-height: 100dvh;
@@ -102,3 +229,74 @@ body {
     gap: 1rem;
   }
 }
+
+/* Rich text editor (Tiptap) */
+.rich-text-editor__content p.is-editor-empty:first-child::before {
+  color: var(--color-charcoal-muted);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.rich-text-content p + p,
+.rich-text-editor__content p + p {
+  margin-top: 0.75em;
+}
+
+.rich-text-content ul,
+.rich-text-content ol,
+.rich-text-editor__content ul,
+.rich-text-editor__content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.rich-text-content ul {
+  list-style-type: disc;
+}
+
+.rich-text-content ol {
+  list-style-type: decimal;
+}
+
+.rich-text-content h2,
+.rich-text-editor__content h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin: 0.75em 0 0.35em;
+}
+
+.rich-text-content h3,
+.rich-text-editor__content h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.65em 0 0.3em;
+}
+
+.rich-text-content strong,
+.rich-text-editor__content strong {
+  font-weight: 700;
+}
+
+.rich-text-content em,
+.rich-text-editor__content em {
+  font-style: italic;
+}
+
+/* Date inputs — entire field opens picker, not just the icon */
+.date-input-field {
+  position: relative;
+}
+
+.date-input-field::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+

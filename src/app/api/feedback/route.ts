@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, asPermissionUser } from "@/lib/auth";
 import {
   countUrls,
   FEEDBACK_LIMITS,
@@ -7,7 +7,13 @@ import {
   type FeedbackType,
 } from "@/lib/feedback";
 import { prisma } from "@/lib/prisma";
-import { canEditTasks, canViewAllCommittees } from "@/lib/types";
+import { canEditTasks, canReviewFeedback, canViewAllCommittees } from "@/lib/types";
+
+function canReviewFeedbackGlobal(user: NonNullable<Awaited<ReturnType<typeof getSessionUser>>>) {
+  const perm = asPermissionUser(user);
+  if (canViewAllCommittees(perm)) return true;
+  return user.committeeMemberships.some((m) => canReviewFeedback(perm, m.committeeId));
+}
 
 export async function GET(request: Request) {
   const user = await getSessionUser();
@@ -23,7 +29,7 @@ export async function GET(request: Request) {
     const items = await prisma.committeeFeedback.findMany({
       where: { userId: user.id },
       include: {
-        committee: { select: { name: true, charterLetter: true } },
+        committee: { select: { id: true, name: true, charterLetter: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 10,
@@ -31,16 +37,28 @@ export async function GET(request: Request) {
     return NextResponse.json(items);
   }
 
-  const canReview =
-    canViewAllCommittees(user.role) || canEditTasks(user.role);
+  const perm = asPermissionUser(user);
+  const canReview = canReviewFeedbackGlobal(user);
 
   if (!canReview) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    const items = await prisma.committeeFeedback.findMany({
+      where: {
+        userId: user.id,
+        ...(committeeId ? { committeeId } : {}),
+      },
+      include: {
+        user: { select: { name: true, email: true } },
+        committee: { select: { id: true, name: true, charterLetter: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return NextResponse.json(items);
   }
 
   const where = committeeId
     ? { committeeId }
-    : canViewAllCommittees(user.role)
+    : canViewAllCommittees(perm)
       ? {}
       : {
           committeeId: {
@@ -52,7 +70,7 @@ export async function GET(request: Request) {
     where,
     include: {
       user: { select: { name: true, email: true } },
-      committee: { select: { name: true, charterLetter: true } },
+      committee: { select: { id: true, name: true, charterLetter: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -192,7 +210,7 @@ export async function POST(request: Request) {
       message,
     },
     include: {
-      committee: { select: { name: true, charterLetter: true } },
+      committee: { select: { id: true, name: true, charterLetter: true } },
     },
   });
 
@@ -205,9 +223,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
 
-  const canReview =
-    canViewAllCommittees(user.role) || canEditTasks(user.role);
-  if (!canReview) {
+  const perm = asPermissionUser(user);
+  if (!canReviewFeedbackGlobal(user)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
@@ -232,8 +249,8 @@ export async function PATCH(request: Request) {
   }
 
   if (
-    !canViewAllCommittees(user.role) &&
-    !user.committeeMemberships.some((m) => m.committeeId === existing.committeeId)
+    !canViewAllCommittees(perm) &&
+    !canEditTasks(perm, existing.committeeId)
   ) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
@@ -243,7 +260,7 @@ export async function PATCH(request: Request) {
     data: { status: body.status },
     include: {
       user: { select: { name: true, email: true } },
-      committee: { select: { name: true, charterLetter: true } },
+      committee: { select: { id: true, name: true, charterLetter: true } },
     },
   });
 

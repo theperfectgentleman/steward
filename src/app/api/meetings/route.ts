@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  assertCommitteeMutation,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -15,20 +16,21 @@ export async function GET(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
+  const perm = asPermissionUser(auth.user);
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
 
   if (committeeId) {
     const access = assertCommitteeAccess(auth.user, committeeId);
     if (access) return access;
-  } else if (!canViewAllCommittees(auth.user.role)) {
+  } else if (!canViewAllCommittees(perm)) {
     return NextResponse.json({ error: "committeeId required" }, { status: 400 });
   }
 
   const meetings = await prisma.meeting.findMany({
     where: committeeId
       ? { committeeId }
-      : canViewAllCommittees(auth.user.role)
+      : canViewAllCommittees(perm)
         ? undefined
         : {
             committeeId: {
@@ -52,13 +54,6 @@ export async function POST(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canLogMinutes(auth.user.role)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
   const body = (await request.json()) as {
     title?: string;
     date?: string;
@@ -71,10 +66,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
+  const mutation = assertCommitteeMutation(auth.user, body.committeeId);
+  if (mutation) return mutation;
+
+  const perm = asPermissionUser(auth.user);
+  if (!canLogMinutes(perm, body.committeeId)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+
   const access = assertCommitteeAccess(auth.user, body.committeeId);
   if (access) return access;
 
-  // Prefer explicit memberIds; otherwise bootstrap from committee roster
   let memberIds = body.memberIds ?? [];
   if (memberIds.length === 0) {
     const roster = await prisma.committeeMember.findMany({
@@ -116,16 +118,6 @@ export async function PATCH(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canApproveMinutes(auth.user.role)) {
-    return NextResponse.json(
-      { error: "Only the chairperson can approve minutes" },
-      { status: 403 },
-    );
-  }
-
   const body = (await request.json()) as {
     id?: string;
     approved?: boolean;
@@ -138,6 +130,17 @@ export async function PATCH(request: Request) {
   const existing = await prisma.meeting.findUnique({ where: { id: body.id } });
   if (!existing) {
     return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+  }
+
+  const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
+  if (mutation) return mutation;
+
+  const perm = asPermissionUser(auth.user);
+  if (!canApproveMinutes(perm, existing.committeeId)) {
+    return NextResponse.json(
+      { error: "Only the chairperson can approve minutes" },
+      { status: 403 },
+    );
   }
 
   const access = assertCommitteeAccess(auth.user, existing.committeeId);

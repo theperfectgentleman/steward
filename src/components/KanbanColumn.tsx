@@ -4,7 +4,6 @@ import { useState } from "react";
 import type { TaskStatus } from "@/lib/types";
 import { COLUMN_META } from "@/lib/kanban";
 import { TaskCard } from "@/components/TaskCard";
-import type { UserRole } from "@/lib/types";
 
 type Task = {
   id: string;
@@ -23,7 +22,7 @@ type KanbanColumnProps = {
   status: TaskStatus;
   tasks: Task[];
   userId: string;
-  userRole: UserRole;
+  canEdit: boolean;
   members: Member[];
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
@@ -34,7 +33,7 @@ export function KanbanColumn({
   status,
   tasks,
   userId,
-  userRole,
+  canEdit,
   members,
   onStatusChange,
   onAssign,
@@ -68,6 +67,7 @@ export function KanbanColumn({
 
   return (
     <section
+      id={`kanban-column-${status}`}
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -99,7 +99,8 @@ export function KanbanColumn({
             assigneeName={task.assignedTo?.name}
             assignedToId={task.assignedTo?.id}
             currentUserId={userId}
-            userRole={userRole}
+            canEdit={canEdit}
+            isAssignee={task.assignedTo?.id === userId}
             members={members}
             isSubtask={task.isSubtask}
             eventTitle={task.eventTitle}

@@ -1,6 +1,6 @@
 type AlertItem = {
   id: string;
-  type: "blocked" | "completed" | "minutes";
+  type: "blocked" | "completed" | "minutes" | "assignment";
   message: string;
   time: string;
   href?: string;
@@ -12,6 +12,7 @@ const TYPE_STYLES = {
   blocked: "border-l-accent bg-accent/5",
   completed: "border-l-primary bg-primary/5",
   minutes: "border-l-charcoal bg-charcoal/5",
+  assignment: "border-l-accent bg-accent/10",
 };
 
 type Props = {

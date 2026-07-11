@@ -3,11 +3,31 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import {
   canViewAllCommittees,
-  isReadOnlyExecutive,
+  type PermissionUser,
   type UserRole,
 } from "@/lib/types";
 
 export type SessionUser = NonNullable<Awaited<ReturnType<typeof getSessionUser>>>;
+
+function toPermissionUser(
+  user: SessionUser,
+): PermissionUser {
+  return {
+    id: user.id,
+    role: user.role,
+    committeeMemberships: user.committeeMemberships.map((m) => ({
+      committeeId: m.committeeId,
+      title: m.title,
+    })),
+    presbyteryMembership: user.presbyteryMembership
+      ? { isHead: user.presbyteryMembership.isHead }
+      : null,
+  };
+}
+
+export function asPermissionUser(user: SessionUser): PermissionUser {
+  return toPermissionUser(user);
+}
 
 export async function getSessionUserId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -20,7 +40,10 @@ export async function getSessionUser() {
 
   return prisma.user.findUnique({
     where: { id: userId },
-    include: { committeeMemberships: true },
+    include: {
+      committeeMemberships: true,
+      presbyteryMembership: true,
+    },
   });
 }
 
@@ -32,7 +55,6 @@ export function forbidden(message = "Not authorized") {
   return NextResponse.json({ error: message }, { status: 403 });
 }
 
-/** Require a signed-in user. Returns the user or an error Response. */
 export async function requireUser(): Promise<
   { user: SessionUser; error?: never } | { user?: never; error: NextResponse }
 > {
@@ -41,7 +63,6 @@ export async function requireUser(): Promise<
   return { user };
 }
 
-/** Require one of the given roles. */
 export async function requireRoles(
   roles: UserRole[],
 ): Promise<
@@ -55,20 +76,36 @@ export async function requireRoles(
   return result;
 }
 
-/** Block Church Executive from mutating data (PRD: read-only). */
-export function assertNotReadOnly(user: SessionUser): NextResponse | null {
-  if (isReadOnlyExecutive(user.role)) {
-    return forbidden("Church executives have read-only access");
+export function assertCommitteeMutation(
+  user: SessionUser,
+  committeeId: string,
+): NextResponse | null {
+  if (user.role !== "CHURCH_EXECUTIVE") return null;
+  const hasTitle = user.committeeMemberships.some(
+    (m) => m.committeeId === committeeId,
+  );
+  if (!hasTitle) {
+    return forbidden(
+      "Presbytery members have read-only access to committee work",
+    );
   }
   return null;
 }
 
-/** Whether the user may access a specific committee's data. */
+/** @deprecated use assertCommitteeMutation */
+export function assertNotReadOnly(user: SessionUser): NextResponse | null {
+  if (user.role === "CHURCH_EXECUTIVE") {
+    return forbidden("Presbytery members have read-only access");
+  }
+  return null;
+}
+
 export function canAccessCommittee(
   user: SessionUser,
   committeeId: string,
 ): boolean {
-  if (canViewAllCommittees(user.role)) return true;
+  const perm = toPermissionUser(user);
+  if (canViewAllCommittees(perm)) return true;
   return user.committeeMemberships.some((m) => m.committeeId === committeeId);
 }
 

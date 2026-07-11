@@ -30,7 +30,7 @@ export function HealthRing({ label, completed, total, blocked = 0 }: HealthRingP
             cy="48"
             r={radius}
             fill="none"
-            stroke="#84CC16"
+            stroke="var(--color-primary)"
             strokeWidth="10"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
@@ -47,7 +47,7 @@ export function HealthRing({ label, completed, total, blocked = 0 }: HealthRingP
       <p className="text-xs text-muted">
         {completed}/{total} done
         {blocked > 0 && (
-          <span className="text-accent font-medium"> · {blocked} blocked</span>
+          <span className="text-accent font-medium"> · {blocked} awaiting</span>
         )}
       </p>
     </div>

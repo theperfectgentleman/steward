@@ -5,6 +5,8 @@ import { MessageSquarePlus } from "lucide-react";
 import { BottomSheet } from "./BottomSheet";
 import { SegmentedControl } from "./SegmentedControl";
 import { TouchButton } from "./TouchButton";
+import { SearchableCommitteeSelect } from "./SearchableCommitteeSelect";
+import { FORM_TEXTAREA_CLASS } from "@/lib/form-field";
 import { useApp } from "@/providers/AppProvider";
 import {
   FEEDBACK_LIMITS,
@@ -22,8 +24,10 @@ type SubmitState = "idle" | "submitting" | "success" | "error";
 
 export function FeedbackSubmitSheet({
   committeeId: fixedCommitteeId,
+  triggerClassName = "",
 }: {
   committeeId?: string;
+  triggerClassName?: string;
 }) {
   const { user } = useApp();
   const [open, setOpen] = useState(false);
@@ -109,11 +113,11 @@ export function FeedbackSubmitSheet({
     <>
       <TouchButton
         size="lg"
-        className="w-full"
+        className={`text-sm sm:text-base ${triggerClassName}`}
         onClick={() => setOpen(true)}
       >
-        <MessageSquarePlus className="h-5 w-5" />
-        Report Issue or Suggestion
+        <MessageSquarePlus className="h-5 w-5 shrink-0" />
+        Send feedback
       </TouchButton>
 
       <BottomSheet
@@ -171,18 +175,15 @@ export function FeedbackSubmitSheet({
               >
                 Committee
               </label>
-              <select
-                id="feedback-committee"
-                value={committeeId}
-                onChange={(e) => setCommitteeId(e.target.value)}
-                className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none bg-white"
-              >
-                {committees.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.charterLetter.toUpperCase()}) {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <SearchableCommitteeSelect
+                  id="feedback-committee"
+                  committees={committees}
+                  value={committeeId}
+                  onChange={setCommitteeId}
+                  emptyLabel="Select committee"
+                />
+              </div>
             </div>
             )}
 
@@ -200,7 +201,7 @@ export function FeedbackSubmitSheet({
                 rows={5}
                 maxLength={FEEDBACK_LIMITS.maxMessageLength}
                 placeholder="Describe the issue or suggestion clearly…"
-                className="mt-2 w-full px-4 py-3 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none text-base resize-none min-h-[120px]"
+                className={`mt-2 ${FORM_TEXTAREA_CLASS} resize-none`}
               />
               <p
                 className={`text-xs mt-1 ${charsLeft < 100 ? "text-accent" : "text-muted"}`}

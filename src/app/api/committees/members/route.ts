@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRoles(["SUPER_ADMIN"]);
+  const auth = await requireRoles(["SUPER_ADMIN", "SYSTEM_ADMIN"]);
   if (auth.error) return auth.error;
 
   const body = (await request.json()) as {

@@ -9,10 +9,9 @@ datasource db {
 
 enum UserRole {
   SUPER_ADMIN
+  SYSTEM_ADMIN
   CHURCH_EXECUTIVE
-  COMMITTEE_CHAIRPERSON
-  COMMITTEE_SECRETARY
-  COMMITTEE_MEMBER
+  COMMITTEE_PARTICIPANT
 }
 
 enum CommitteeTitle {
@@ -28,6 +27,41 @@ enum TaskStatus {
   DONE
 }
 
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETE
+}
+
+enum AssignmentSource {
+  PRESBYTERY
+  COMMITTEE_REFERRAL
+}
+
+enum AssignmentStatus {
+  DRAFT
+  ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  IN_REVIEW
+  RETURNED
+  CHAIR_APPROVED
+  CLOSED
+  CANCELLED
+}
+
+enum AssignmentPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum EntityType {
+  ASSIGNMENT
+  PROJECT
+  TASK
+}
+
 enum AttendanceStatus {
   PRESENT
   EXCUSED
@@ -41,23 +75,102 @@ enum RsvpStatus {
   PENDING
 }
 
+enum DeliverableKind {
+  NOTE
+  LINK
+}
+
+enum DocumentSource {
+  UPLOAD
+  CREATED
+}
+
+enum LibraryDocumentTag {
+  REPORT
+  MINUTES
+  POLICY
+  BRIEF
+  FORM
+  OTHER
+}
+
+enum FeedbackType {
+  ISSUE
+  SUGGESTION
+}
+
+enum FeedbackStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum OtpChannel {
+  EMAIL
+  SMS
+}
+
+enum OtpPurpose {
+  INVITE
+  LOGIN_RESET
+}
+
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  phone     String?
-  role      UserRole @default(COMMITTEE_MEMBER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String     @id @default(cuid())
+  name             String
+  email            String     @unique
+  phone            String?
+  passwordHash     String?
+  status           UserStatus @default(PENDING)
+  emailVerifiedAt  DateTime?
+  phoneVerifiedAt  DateTime?
+  role             UserRole   @default(COMMITTEE_PARTICIPANT)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   committeeMemberships CommitteeMember[]
-  assignedTasks        Task[]            @relation("AssignedTasks")
-  createdTasks         Task[]            @relation("CreatedTasks")
+  presbyteryMembership PresbyteryMember?
+  assignedTasks        Task[]              @relation("AssignedTasks")
+  createdTasks         Task[]              @relation("CreatedTasks")
+  createdProjects      Project[]           @relation("CreatedProjects")
+  createdAssignments   Assignment[]        @relation("CreatedAssignments")
   rsvps                EventRsvp[]
   attendances          Attendance[]
   createdMeetings      Meeting[]
   feedback             CommitteeFeedback[]
   eventDeliverables    EventDeliverable[]
+  comments             Comment[]
+  documents            Document[]
+  libraryDocuments     LibraryDocument[]
+  activityLogs         ActivityLog[]
+  invitesCreated       Invite[]            @relation("InvitesCreated")
+  invitesReceived      Invite[]            @relation("InvitesReceived")
+  otpChallenges        OtpChallenge[]
+}
+
+model PresbyteryGroup {
+  id        String             @id @default(cuid())
+  name      String             @default("Presbytery")
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  members   PresbyteryMember[]
+}
+
+model PresbyteryMember {
+  id        String          @id @default(cuid())
+  userId    String          @unique
+  groupId   String
+  isHead    Boolean         @default(false)
+  createdAt DateTime        @default(now())
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group PresbyteryGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 }
 
 model Committee {
@@ -70,12 +183,17 @@ model Committee {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  members   CommitteeMember[]
-  tasks     Task[]
-  events    Event[]
-  meetings  Meeting[]
-  timelines TimelineGoal[]
-  feedback  CommitteeFeedback[]
+  members            CommitteeMember[]
+  invites            Invite[]
+  tasks              Task[]
+  projects           Project[]
+  events             Event[]
+  meetings           Meeting[]
+  timelines          TimelineGoal[]
+  feedback           CommitteeFeedback[]
+  targetAssignments  Assignment[]        @relation("TargetAssignments")
+  sourceAssignments  Assignment[]        @relation("SourceAssignments")
+  libraryDocuments   LibraryDocument[]
 }
 
 model CommitteeMember {
@@ -90,6 +208,90 @@ model CommitteeMember {
   @@unique([userId, committeeId])
 }
 
+model Invite {
+  id          String         @id @default(cuid())
+  token       String         @unique
+  userId      String
+  committeeId String
+  title       CommitteeTitle @default(MEMBER)
+  createdById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime       @default(now())
+
+  user      User      @relation("InvitesReceived", fields: [userId], references: [id], onDelete: Cascade)
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("InvitesCreated", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([userId, committeeId])
+  @@index([expiresAt])
+}
+
+model OtpChallenge {
+  id          String     @id @default(cuid())
+  userId      String
+  channel     OtpChannel
+  destination String
+  codeHash    String
+  purpose     OtpPurpose
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  attempts    Int        @default(0)
+  createdAt   DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+}
+
+model Project {
+  id           String        @id @default(cuid())
+  title        String
+  description  String?
+  status       ProjectStatus @default(ACTIVE)
+  committeeId  String
+  assignmentId String?       @unique
+  createdById  String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  committee  Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  createdBy  User        @relation("CreatedProjects", fields: [createdById], references: [id])
+  tasks      Task[]
+}
+
+model Assignment {
+  id                  String             @id @default(cuid())
+  title               String
+  description         String?
+  source              AssignmentSource
+  status              AssignmentStatus   @default(DRAFT)
+  priority            AssignmentPriority @default(NORMAL)
+  createdById         String
+  targetCommitteeId   String
+  sourceCommitteeId   String?
+  parentAssignmentId  String?
+  rootTaskId          String?            @unique
+  dueDate             DateTime?
+  returnComment       String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  createdBy        User       @relation("CreatedAssignments", fields: [createdById], references: [id])
+  targetCommittee  Committee  @relation("TargetAssignments", fields: [targetCommitteeId], references: [id], onDelete: Cascade)
+  sourceCommittee  Committee? @relation("SourceAssignments", fields: [sourceCommitteeId], references: [id], onDelete: SetNull)
+  parentAssignment Assignment?  @relation("ReferralChain", fields: [parentAssignmentId], references: [id], onDelete: SetNull)
+  childAssignments Assignment[] @relation("ReferralChain")
+  rootTask         Task?        @relation("AssignmentRootTask", fields: [rootTaskId], references: [id], onDelete: SetNull)
+  project          Project?
+
+  @@index([targetCommitteeId, status])
+  @@index([createdById, status])
+  @@index([status, dueDate])
+}
+
 model Task {
   id           String     @id @default(cuid())
   title        String
@@ -97,6 +299,7 @@ model Task {
   status       TaskStatus @default(TODO)
   dueDate      DateTime?
   committeeId  String
+  projectId    String?
   eventId      String?
   parentId     String?
   assignedToId String?
@@ -104,20 +307,83 @@ model Task {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  committee  Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  event      Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  parent     Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
-  subtasks   Task[]    @relation("TaskSubtasks")
-  assignedTo User?     @relation("AssignedTasks", fields: [assignedToId], references: [id])
-  createdBy  User?     @relation("CreatedTasks", fields: [createdById], references: [id])
+  committee        Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  project          Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  event            Event?      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  parent           Task?       @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks         Task[]      @relation("TaskSubtasks")
+  assignedTo       User?       @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy        User?       @relation("CreatedTasks", fields: [createdById], references: [id])
+  assignmentAsRoot Assignment? @relation("AssignmentRootTask")
 
   @@index([eventId])
   @@index([parentId])
+  @@index([projectId])
+  @@index([committeeId, assignedToId, status])
 }
 
-enum DeliverableKind {
-  NOTE
-  LINK
+model Comment {
+  id         String     @id @default(cuid())
+  body       String
+  authorId   String
+  entityType EntityType
+  entityId   String
+  createdAt  DateTime   @default(now())
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId, createdAt])
+}
+
+model Document {
+  id           String     @id @default(cuid())
+  fileName     String
+  storageKey   String
+  mimeType     String
+  entityType   EntityType
+  entityId     String
+  uploadedById String
+  createdAt    DateTime   @default(now())
+
+  uploadedBy User @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+}
+
+model LibraryDocument {
+  id           String             @id @default(cuid())
+  title        String
+  tag          LibraryDocumentTag @default(OTHER)
+  source       DocumentSource     @default(CREATED)
+  body         String?
+  fileName     String?
+  fileUrl      String?
+  mimeType     String?
+  committeeId  String?
+  uploadedById String
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  committee  Committee? @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+  uploadedBy User       @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([committeeId, tag, createdAt])
+  @@index([tag, createdAt])
+}
+
+model ActivityLog {
+  id         String     @id @default(cuid())
+  entityType EntityType
+  entityId   String
+  action     String
+  actorId    String
+  metadata   Json?
+  createdAt  DateTime   @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model Event {
@@ -210,17 +476,6 @@ model TimelineGoal {
   committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
 }
 
-enum FeedbackType {
-  ISSUE
-  SUGGESTION
-}
-
-enum FeedbackStatus {
-  PENDING
-  REVIEWED
-  DISMISSED
-}
-
 model CommitteeFeedback {
   id          String         @id @default(cuid())
   userId      String
@@ -235,4 +490,10 @@ model CommitteeFeedback {
 
   @@index([userId, committeeId, createdAt])
   @@index([committeeId, status, createdAt])
+}
+
+model AppSettings {
+  id                      String   @id @default("default")
+  committeeBudgetsEnabled Boolean  @default(false)
+  updatedAt               DateTime @updatedAt
 }

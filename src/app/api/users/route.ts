@@ -4,8 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { canManageUsers, type UserRole } from "@/lib/types";
 
 export async function GET() {
-  // Demo login picker is unauthenticated — return id/name/role only.
-  // Signed-in super admins also receive email for the admin directory.
   const session = await getSessionUser();
   const isAdmin = session ? canManageUsers(session.role) : false;
 
@@ -16,18 +14,19 @@ export async function GET() {
       name: true,
       role: true,
       ...(isAdmin ? { email: true } : {}),
+      committeeMemberships: isAdmin
+        ? { select: { committeeId: true, title: true } }
+        : false,
     },
   });
 
   return NextResponse.json(users, {
-    headers: {
-      "Cache-Control": "no-store, no-cache, must-revalidate",
-    },
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRoles(["SUPER_ADMIN"]);
+  const auth = await requireRoles(["SUPER_ADMIN", "SYSTEM_ADMIN"]);
   if (auth.error) return auth.error;
 
   const body = (await request.json()) as {
@@ -39,6 +38,10 @@ export async function POST(request: Request) {
 
   if (!body.name || !body.email || !body.role) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  if (body.role === "SUPER_ADMIN" && auth.user.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "Only Super Admin can create Super Admin" }, { status: 403 });
   }
 
   const user = await prisma.user.create({

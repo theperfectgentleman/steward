@@ -11,7 +11,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   if (!user || !canManageUsers(user.role)) {
     return (
       <p className="text-center text-muted py-12">
-        Admin access is restricted to Super Admins.
+        Admin access is restricted to System and Super Admins.
       </p>
     );
   }

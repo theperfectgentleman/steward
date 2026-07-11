@@ -13,6 +13,8 @@ import {
   Upload,
 } from "lucide-react";
 import { BottomSheet } from "@/components/BottomSheet";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
+import { AccessDenied } from "@/components/AccessDenied";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { TouchButton } from "@/components/TouchButton";
 import { useApp } from "@/providers/AppProvider";
@@ -21,8 +23,14 @@ import {
   TASK_STATUSES,
   canEditTasks,
   canRsvp,
+  getCommitteeTitle,
   type TaskStatus,
 } from "@/lib/types";
+import { toPermissionUser } from "@/lib/permissions-client";
+import { eventPath } from "@/lib/navigation";
+import { formatDate, formatDateTimeWithWeekday } from "@/lib/dates";
+import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
+import { PageShimmer } from "@/components/loading/PageShimmer";
 
 type Subtask = {
   id: string;
@@ -79,6 +87,7 @@ export function EventDetailView({
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [descEdit, setDescEdit] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -93,15 +102,23 @@ export function EventDetailView({
   const [rsvp, setRsvp] = useState<"GOING" | "DECLINED" | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const canEdit = !!(user && canEditTasks(user.role));
-  const showRsvp = !!(user && canRsvp(user.role));
+  const perm = user ? toPermissionUser(user) : null;
+  const canEdit = !!(perm && canEditTasks(perm, committeeId));
+  const showRsvp = !!(perm && canRsvp(perm));
 
   const load = useCallback(() => {
     if (!eventId) return;
     setLoading(true);
     fetch(`/api/events/${eventId}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (r.status === 403) {
+          setAccessDenied(true);
+          return null;
+        }
+        return r.json();
+      })
       .then((data) => {
+        if (!data) return;
         if (data?.id) {
           setEvent(data);
           setDescEdit(data.description ?? "");
@@ -252,14 +269,20 @@ export function EventDetailView({
 
   const canUpdateTask = (task: Subtask | ParentTask) => {
     if (!user) return false;
-    if (canEditTasks(user.role)) return true;
+    if (perm && canEditTasks(perm, committeeId)) return true;
     return (
-      user.role === "COMMITTEE_MEMBER" && task.assignedTo?.id === user.id
+      perm &&
+      getCommitteeTitle(perm, committeeId) === "MEMBER" &&
+      task.assignedTo?.id === user.id
     );
   };
 
   if (loading) {
-    return <p className="text-muted text-center py-12">Loading event…</p>;
+    return <PageShimmer variant="detail" />;
+  }
+
+  if (accessDenied) {
+    return <AccessDenied itemLabel="event" />;
   }
 
   if (!event) {
@@ -287,14 +310,11 @@ export function EventDetailView({
           Schedule
         </Link>
         <h1 className="text-2xl font-bold text-charcoal">{event.title}</h1>
+        <div className="mt-2">
+          <CopyLinkButton path={eventPath(committeeId, eventId)} />
+        </div>
         <time className="text-sm text-muted mt-1 block">
-          {new Date(event.startDate).toLocaleString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
+          {formatDateTimeWithWeekday(event.startDate)}
         </time>
       </div>
 
@@ -325,7 +345,7 @@ export function EventDetailView({
             onClick={() => handleRsvp("GOING")}
             className={`flex-1 touch-target-lg rounded-xl font-bold border transition-all cursor-pointer ${
               rsvp === "GOING"
-                ? "bg-primary border-primary text-charcoal shadow-2xs"
+                ? "bg-primary border-primary text-white shadow-2xs"
                 : "bg-white border-charcoal/10 hover:border-primary text-charcoal-muted"
             }`}
           >
@@ -355,7 +375,7 @@ export function EventDetailView({
               value={descEdit}
               onChange={(e) => setDescEdit(e.target.value)}
               rows={5}
-              className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base"
+              className={FORM_TEXTAREA_CLASS}
               placeholder="Describe the event in detail — this feeds AI task generation."
             />
             <TouchButton
@@ -590,7 +610,7 @@ export function EventDetailView({
                   )}
                   <p className="text-xs text-muted mt-2">
                     {d.createdBy.name} ·{" "}
-                    {new Date(d.createdAt).toLocaleDateString()}
+                    {formatDate(d.createdAt)}
                   </p>
                 </div>
                 {canEdit && (
@@ -669,7 +689,7 @@ export function EventDetailView({
             value={subtaskTitle}
             onChange={(e) => setSubtaskTitle(e.target.value)}
             placeholder="What needs to be done?"
-            className="w-full input-touch px-4 rounded-xl border border-charcoal/10 font-semibold"
+            className={FORM_FIELD_CLASS}
           />
           <TouchButton
             size="lg"
@@ -693,7 +713,7 @@ export function EventDetailView({
               type="text"
               value={delTitle}
               onChange={(e) => setDelTitle(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 font-semibold"
+              className={`mt-2 ${FORM_FIELD_CLASS}`}
             />
           </label>
           <label className="block">
@@ -706,14 +726,14 @@ export function EventDetailView({
                 value={delContent}
                 onChange={(e) => setDelContent(e.target.value)}
                 placeholder="https://"
-                className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10"
+                className={`mt-2 ${FORM_FIELD_CLASS}`}
               />
             ) : (
               <textarea
                 value={delContent}
                 onChange={(e) => setDelContent(e.target.value)}
                 rows={4}
-                className="mt-2 w-full px-4 py-3 rounded-xl border border-charcoal/10"
+                className={`mt-2 ${FORM_TEXTAREA_CLASS}`}
               />
             )}
           </label>

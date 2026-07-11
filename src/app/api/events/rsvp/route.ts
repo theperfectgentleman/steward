@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -11,10 +11,8 @@ export async function PATCH(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canRsvp(auth.user.role)) {
+  const perm = asPermissionUser(auth.user);
+  if (!canRsvp(perm)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

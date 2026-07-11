@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   assertCommitteeAccess,
-  assertNotReadOnly,
+  assertCommitteeMutation,
+  asPermissionUser,
   requireUser,
 } from "@/lib/auth";
 import { enrichEventsWithProgress } from "@/lib/event-queries";
@@ -12,12 +13,13 @@ export async function GET(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
+  const perm = asPermissionUser(auth.user);
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const global = searchParams.get("global") === "true";
 
   if (global) {
-    if (!canViewAllCommittees(auth.user.role)) {
+    if (!canViewAllCommittees(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
   } else if (committeeId) {
@@ -49,13 +51,6 @@ export async function POST(request: Request) {
   const auth = await requireUser();
   if (auth.error) return auth.error;
 
-  const readOnly = assertNotReadOnly(auth.user);
-  if (readOnly) return readOnly;
-
-  if (!canEditTasks(auth.user.role)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
   const body = (await request.json()) as {
     title?: string;
     description?: string;
@@ -65,6 +60,14 @@ export async function POST(request: Request) {
 
   if (!body.title || !body.startDate || !body.committeeId) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  const mutation = assertCommitteeMutation(auth.user, body.committeeId);
+  if (mutation) return mutation;
+
+  const perm = asPermissionUser(auth.user);
+  if (!canEditTasks(perm, body.committeeId)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const access = assertCommitteeAccess(auth.user, body.committeeId);

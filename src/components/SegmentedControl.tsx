@@ -29,7 +29,7 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(opt.value)}
             className={`flex-1 min-w-[calc(50%-0.25rem)] touch-target-lg rounded-xl px-4 py-3 text-sm font-semibold border-2 transition-all active:scale-[0.98] ${
               selected
-                ? "bg-primary border-primary text-charcoal shadow-sm"
+                ? "bg-primary border-primary text-white shadow-sm"
                 : "bg-white border-charcoal/15 text-charcoal hover:border-charcoal/30"
             }`}
           >

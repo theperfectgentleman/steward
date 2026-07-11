@@ -1,5 +1,11 @@
-const CACHE_NAME = "unitycommit-v2";
-const PRECACHE = ["/manifest.json", "/icon-192.png", "/icon-512.png"];
+const CACHE_NAME = "steward-v5";
+const PRECACHE = [
+  "/manifest.json",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/logo-mark.png",
+  "/apple-touch-icon.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

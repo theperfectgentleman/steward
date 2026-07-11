@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { TouchButton } from "@/components/TouchButton";
 import { BottomSheet } from "@/components/BottomSheet";
 import { useApp } from "@/providers/AppProvider";
-import { canApproveMinutes, canLogMinutes } from "@/lib/types";
+import { canLogMinutes, canApproveMinutes, isCommitteeReadOnly } from "@/lib/types";
+import { formatDate, formatDateWithWeekday } from "@/lib/dates";
+import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
+import { toPermissionUser } from "@/lib/permissions-client";
 import {
   Check,
   Plus,
@@ -64,6 +68,8 @@ function parseMarkdown(text: string) {
 
 export function MinutesView({ committeeId }: { committeeId: string }) {
   const { user } = useApp();
+  const searchParams = useSearchParams();
+  const deepLinkMeetingId = searchParams.get("meeting");
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [roster, setRoster] = useState<Member[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -93,10 +99,23 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
 
   // Sync first selection on desktop load
   useEffect(() => {
+    if (deepLinkMeetingId && meetings.some((m) => m.id === deepLinkMeetingId)) {
+      setSelectedMeetingId(deepLinkMeetingId);
+      setIsCreating(false);
+      return;
+    }
+    if (searchParams.get("pending") === "1") {
+      const pending = meetings.find((m) => !m.approved);
+      if (pending) {
+        setSelectedMeetingId(pending.id);
+        setIsCreating(false);
+        return;
+      }
+    }
     if (meetings.length > 0 && !selectedMeetingId && !isCreating) {
       setSelectedMeetingId(meetings[0].id);
     }
-  }, [meetings, selectedMeetingId, isCreating]);
+  }, [meetings, selectedMeetingId, isCreating, deepLinkMeetingId, searchParams]);
 
   useEffect(() => {
     if (!committeeId) return;
@@ -170,8 +189,10 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
     }
   }, [focusedIndex, points.length]);
 
-  const canCreate = user && canLogMinutes(user.role);
-  const canApprove = user && canApproveMinutes(user.role);
+  const perm = user ? toPermissionUser(user) : null;
+  const canCreate = perm ? canLogMinutes(perm, committeeId) : false;
+  const canApprove = perm ? canApproveMinutes(perm, committeeId) : false;
+  const readOnlyViewer = perm ? isCommitteeReadOnly(perm, committeeId) : false;
 
   if (!committeeId) {
     return (
@@ -202,10 +223,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
     <div className="space-y-6">
       {/* Header Panel */}
       <div className="flex items-center justify-between gap-3 border-b border-charcoal/5 pb-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-charcoal tracking-tight">Minutes</h1>
-          <p className="text-muted text-sm mt-0.5 font-medium">Meeting logs, minutes & attendance</p>
-        </div>
+        <p className="text-sm text-muted">Meeting logs, minutes &amp; attendance</p>
         {canCreate && (
           <div className="flex items-center gap-2">
             <TouchButton
@@ -263,11 +281,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
                   </div>
                   <span className="text-xs text-muted font-medium mt-2 flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5" />
-                    {new Date(m.date).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {formatDate(m.date)}
                   </span>
                 </button>
               );
@@ -293,12 +307,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
                   <div className="flex items-center gap-2 mt-2">
                     <time className="text-xs font-semibold text-muted flex items-center gap-1">
                       <Calendar className="h-3.5 w-3.5" />
-                      {new Date(selectedMeeting.date).toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                      {formatDateWithWeekday(selectedMeeting.date)}
                     </time>
                     <span className="text-xs text-muted font-bold">·</span>
                     <span className={`inline-flex items-center gap-1 text-xs font-bold uppercase ${
@@ -329,6 +338,14 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
                   </TouchButton>
                 )}
               </div>
+
+              {readOnlyViewer && selectedMeeting && !selectedMeeting.approved && (
+                <p className="rounded-xl border border-charcoal/10 bg-surface px-4 py-3 text-sm text-muted">
+                  These minutes are waiting on the <strong>committee chair</strong> to
+                  approve. As presbytery you can review them here, but approval is not
+                  your step.
+                </p>
+              )}
 
               {/* Attendance Tracker Grid */}
               {selectedMeeting.attendances.length > 0 && (
@@ -421,12 +438,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
               <div>
                 <h2 className="text-base font-extrabold text-charcoal tracking-tight">{m.title}</h2>
                 <time className="text-xs text-muted font-medium mt-1 block">
-                  {new Date(m.date).toLocaleDateString("en-US", {
-                    weekday: "long",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
+                  {formatDateWithWeekday(m.date)}
                 </time>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
@@ -677,7 +689,7 @@ function MeetingEditor({
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
+            className={`mt-2 ${FORM_FIELD_CLASS}`}
             placeholder="e.g. Soundboard Setup Review"
           />
         </label>
@@ -721,7 +733,7 @@ function MeetingEditor({
             <textarea
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
-              className="w-full h-64 p-4 bg-white rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-sm transition-all font-medium leading-relaxed resize-none"
+              className={`${FORM_TEXTAREA_CLASS} h-64 text-sm font-medium leading-relaxed resize-none`}
               placeholder="Paste or write meeting minutes here. Each paragraph or line starting with a bullet will save as a distinct point."
               data-editor-textarea
             />

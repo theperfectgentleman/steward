@@ -2,18 +2,21 @@
 
 import { useState } from "react";
 import { Calendar, Trash2, User } from "lucide-react";
+import { CopyLinkButton } from "./CopyLinkButton";
+import { taskPath } from "@/lib/navigation";
 import { SegmentedControl } from "./SegmentedControl";
 import { BottomSheet } from "./BottomSheet";
-import type { TaskStatus, UserRole } from "@/lib/types";
+import type { TaskStatus } from "@/lib/types";
 import {
   TASK_STATUS_LABELS,
   TASK_STATUSES,
-  canEditTasks,
 } from "@/lib/types";
 import { COLUMN_META } from "@/lib/kanban";
+import { formatDate } from "@/lib/dates";
 
 type TaskCardProps = {
   id: string;
+  committeeId?: string;
   title: string;
   description?: string | null;
   status: TaskStatus;
@@ -21,7 +24,8 @@ type TaskCardProps = {
   assigneeName?: string | null;
   assignedToId?: string | null;
   currentUserId: string;
-  userRole: UserRole;
+  canEdit: boolean;
+  isAssignee: boolean;
   members?: { id: string; name: string }[];
   layout?: "card" | "kanban";
   isSubtask?: boolean;
@@ -35,6 +39,8 @@ type TaskCardProps = {
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
   onDelete?: (id: string) => void;
+  reviewAssignmentId?: string | null;
+  onSubmitReview?: (assignmentId: string) => void;
 };
 
 function initials(name: string) {
@@ -47,6 +53,7 @@ function initials(name: string) {
 
 export function TaskCard({
   id,
+  committeeId,
   title,
   description,
   status,
@@ -54,7 +61,8 @@ export function TaskCard({
   assigneeName,
   assignedToId,
   currentUserId,
-  userRole,
+  canEdit,
+  isAssignee,
   members = [],
   layout = "card",
   isSubtask = false,
@@ -63,20 +71,19 @@ export function TaskCard({
   onStatusChange,
   onAssign,
   onDelete,
+  reviewAssignmentId,
+  onSubmitReview,
 }: TaskCardProps) {
   const [assignOpen, setAssignOpen] = useState(false);
-  const canAssign = canEditTasks(userRole);
-  const canUpdateStatus =
-    canEditTasks(userRole) ||
-    (userRole === "COMMITTEE_MEMBER" && assignedToId === currentUserId);
+  const canAssign = canEdit;
+  const canUpdateStatus = canEdit || isAssignee;
+  const showSubmitReview =
+    Boolean(reviewAssignmentId) &&
+    isAssignee &&
+    status === "DONE" &&
+    typeof onSubmitReview === "function";
 
-  const dueLabel = dueDate
-    ? new Date(dueDate).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : null;
+  const dueLabel = dueDate ? formatDate(dueDate) : null;
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", id);
@@ -148,6 +155,9 @@ export function TaskCard({
         </div>
 
         <div className="flex items-center gap-2 pt-1 border-t border-charcoal/5">
+          {committeeId && (
+            <CopyLinkButton path={taskPath(committeeId, id)} label="Share" />
+          )}
           {canAssign && (
             <button
               type="button"
@@ -155,6 +165,15 @@ export function TaskCard({
               className="text-xs font-bold text-accent hover:underline touch-target px-1"
             >
               Assign
+            </button>
+          )}
+          {showSubmitReview && reviewAssignmentId && (
+            <button
+              type="button"
+              onClick={() => onSubmitReview?.(reviewAssignmentId)}
+              className="text-xs font-bold text-primary hover:underline touch-target px-1"
+            >
+              Submit for review
             </button>
           )}
           {canUpdateStatus && (
@@ -248,10 +267,24 @@ export function TaskCard({
         </div>
       )}
 
+      {showSubmitReview && reviewAssignmentId && (
+        <button
+          type="button"
+          onClick={() => onSubmitReview?.(reviewAssignmentId)}
+          className="w-full touch-target-lg rounded-xl bg-primary/15 text-charcoal font-semibold border border-primary/30"
+        >
+          Submit assignment for review
+        </button>
+      )}
+
       {dueLabel && (
         <p className="text-sm text-charcoal">
           <span className="font-semibold">Due:</span> {dueLabel}
         </p>
+      )}
+
+      {committeeId && (
+        <CopyLinkButton path={taskPath(committeeId, id)} />
       )}
 
       <button
