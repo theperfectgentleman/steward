@@ -4,6 +4,7 @@ import {
   assertNotReadOnly,
   requireUser,
 } from "@/lib/auth";
+import { enrichEventsWithProgress } from "@/lib/event-queries";
 import { prisma } from "@/lib/prisma";
 import { canEditTasks, canViewAllCommittees } from "@/lib/types";
 
@@ -40,7 +41,8 @@ export async function GET(request: Request) {
     orderBy: { startDate: "asc" },
   });
 
-  return NextResponse.json(events);
+  const enriched = await enrichEventsWithProgress(events);
+  return NextResponse.json(enriched);
 }
 
 export async function POST(request: Request) {

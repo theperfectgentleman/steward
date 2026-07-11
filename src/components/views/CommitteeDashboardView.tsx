@@ -162,7 +162,7 @@ export function CommitteeDashboardView() {
           <Link
             key={href}
             href={href}
-            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-white border border-charcoal/10 hover:border-primary touch-target-lg transition-colors"
+            className="flex flex-col items-center gap-2.5 p-5 rounded-2xl bg-white border border-charcoal/5 shadow-xs hover:border-primary/50 hover:shadow-sm touch-target-lg transition-all"
           >
             <Icon className="h-6 w-6 text-accent" />
             <span className="text-sm font-semibold text-charcoal">{label}</span>
@@ -177,46 +177,50 @@ export function CommitteeDashboardView() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="space-y-4">
-          <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
+          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
             Progress
           </h2>
           {stats && (
-            <HealthRing
-              label={committee.name}
-              completed={stats.done}
-              total={stats.total}
-              blocked={stats.blocked}
-            />
+            <div className="bg-white rounded-2xl border border-charcoal/5 p-5 shadow-xs">
+              <HealthRing
+                label={committee.name}
+                completed={stats.done}
+                total={stats.total}
+                blocked={stats.blocked}
+              />
+            </div>
           )}
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
+          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
             Recent Tasks
           </h2>
-          <ul className="bg-white rounded-2xl border border-charcoal/10 divide-y divide-charcoal/10">
-            {tasks.map((t) => (
-              <li key={t.id} className="px-4 py-3">
-                <p className="text-sm font-medium text-charcoal">{t.title}</p>
-                <p className="text-xs text-muted capitalize">
-                  {t.status.replace(/_/g, " ").toLowerCase()}
-                </p>
-              </li>
-            ))}
-            {tasks.length === 0 && (
-              <li className="px-4 py-6 text-center text-muted text-sm">No tasks yet.</li>
-            )}
-          </ul>
+          <div className="bg-white rounded-2xl border border-charcoal/5 overflow-hidden shadow-xs">
+            <ul className="divide-y divide-charcoal/5">
+              {tasks.map((t) => (
+                <li key={t.id} className="px-5 py-4 hover:bg-slate-50 transition-colors">
+                  <p className="text-sm font-semibold text-charcoal">{t.title}</p>
+                  <p className="text-xs text-muted font-medium capitalize mt-1">
+                    {t.status.replace(/_/g, " ").toLowerCase()}
+                  </p>
+                </li>
+              ))}
+              {tasks.length === 0 && (
+                <li className="px-5 py-8 text-center text-muted text-sm font-medium">No tasks yet.</li>
+              )}
+            </ul>
+          </div>
           <Link
             href={committeePath(committeeId, "tasks")}
-            className="text-sm font-semibold text-accent hover:underline"
+            className="inline-flex items-center text-sm font-semibold text-accent hover:underline mt-1"
           >
             View all tasks →
           </Link>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
+          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
             Committee Alerts
           </h2>
           <AlertFeed alerts={alerts} />

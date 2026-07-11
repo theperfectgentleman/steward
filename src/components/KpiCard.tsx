@@ -8,19 +8,25 @@ type KpiCardProps = {
 };
 
 const ACCENT = {
-  lime: "bg-primary/15 text-primary-dark border-primary/30",
-  gold: "bg-accent/10 text-accent border-accent/30",
-  charcoal: "bg-charcoal/5 text-charcoal border-charcoal/15",
+  lime: "bg-white border-l-4 border-l-primary border-y border-r border-charcoal/5 shadow-xs",
+  gold: "bg-white border-l-4 border-l-accent border-y border-r border-charcoal/5 shadow-xs",
+  charcoal: "bg-white border-l-4 border-l-charcoal-muted border-y border-r border-charcoal/5 shadow-xs",
+};
+
+const LABEL_TEXT = {
+  lime: "text-primary-dark font-bold",
+  gold: "text-accent font-bold",
+  charcoal: "text-charcoal-muted font-bold",
 };
 
 export function KpiCard({ label, value, hint, accent = "charcoal" }: KpiCardProps) {
   return (
     <div
-      className={`rounded-2xl border p-5 ${ACCENT[accent]}`}
+      className={`rounded-2xl p-5 transition-transform hover:-translate-y-0.5 ${ACCENT[accent]}`}
     >
-      <p className="text-xs font-bold uppercase tracking-wide opacity-80">{label}</p>
-      <p className="text-3xl font-bold mt-1">{value}</p>
-      {hint && <p className="text-xs mt-1 opacity-70">{hint}</p>}
+      <p className={`text-xs uppercase tracking-wider ${LABEL_TEXT[accent]}`}>{label}</p>
+      <p className="text-3xl font-extrabold text-charcoal mt-1 tracking-tight">{value}</p>
+      {hint && <p className="text-xs mt-1.5 text-muted font-medium">{hint}</p>}
     </div>
   );
 }

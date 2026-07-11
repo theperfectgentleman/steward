@@ -162,11 +162,11 @@ export function OverallDashboardView() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="lg:col-span-2 space-y-4">
-          <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
+          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
             Committees
           </h2>
-          <div className="bg-white rounded-2xl border border-charcoal/10 overflow-hidden">
-            <ul className="divide-y divide-charcoal/10">
+          <div className="bg-white rounded-2xl border border-charcoal/5 overflow-hidden shadow-xs">
+            <ul className="divide-y divide-charcoal/5">
               {stats.map((s) => {
                 const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
                 return (
@@ -174,31 +174,34 @@ export function OverallDashboardView() {
                     <Link
                       href={committeePath(s.id)}
                       onClick={() => localStorage.setItem("unitycommit-committee", s.id)}
-                      className="flex items-center gap-4 p-4 hover:bg-surface transition-colors touch-target-lg"
+                      className="flex items-center gap-4 p-5 hover:bg-slate-50 transition-colors touch-target-lg"
                     >
-                      <span className="w-10 h-10 flex items-center justify-center rounded-xl bg-accent/10 text-accent font-bold uppercase shrink-0">
+                      <span className="w-10 h-10 flex items-center justify-center rounded-xl bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0">
                         {s.charterLetter}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-charcoal truncate">{s.name}</p>
-                        <div className="mt-2 h-2 rounded-full bg-surface overflow-hidden">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="font-semibold text-charcoal truncate">{s.name}</p>
+                          <span className="text-xs font-bold text-charcoal">{pct}%</span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                           <div
                             className="h-full bg-primary rounded-full"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <p className="text-xs text-muted mt-1">
-                          {s.done}/{s.total} tasks · {s.blocked} blocked
+                        <p className="text-xs text-muted font-medium mt-1.5">
+                          {s.done}/{s.total} tasks complete · {s.blocked} blocked
                         </p>
                       </div>
-                      <ChevronRight className="h-5 w-5 text-muted shrink-0" />
+                      <ChevronRight className="h-5 w-5 text-muted shrink-0 ml-1" />
                     </Link>
                   </li>
                 );
               })}
             </ul>
             {stats.length === 0 && (
-              <p className="text-center text-muted py-8">No committee data yet.</p>
+              <p className="text-center text-muted py-12">No committee data yet.</p>
             )}
           </div>
         </section>

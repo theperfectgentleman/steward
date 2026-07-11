@@ -17,12 +17,27 @@ export function LoginPicker() {
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/users")
-      .then((r) => r.json())
+    fetch("/api/users", { cache: "no-store" })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) {
+          throw new Error(data.error ?? "Could not load profiles");
+        }
+        if (!Array.isArray(data)) {
+          throw new Error("Invalid response from server");
+        }
+        return data as DemoUser[];
+      })
       .then(setUsers)
-      .catch(() => setUsers([]));
+      .catch((e: Error) => {
+        setUsers([]);
+        setError(e.message || "Could not load demo profiles");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const handleLogin = async () => {
@@ -49,6 +64,18 @@ export function LoginPicker() {
           <p className="text-sm font-semibold text-charcoal">
             Select a demo profile to continue
           </p>
+          {loading && (
+            <p className="text-sm text-muted text-center py-6">Loading profiles…</p>
+          )}
+          {error && (
+            <p className="text-sm text-accent bg-accent/10 rounded-xl p-3">{error}</p>
+          )}
+          {!loading && !error && users.length === 0 && (
+            <p className="text-sm text-muted text-center py-6">
+              No profiles found. Run database seed:{" "}
+              <code className="text-xs bg-surface px-1 rounded">npm run db:seed</code>
+            </p>
+          )}
           <ul className="space-y-3">
             {users.map((u) => (
               <li key={u.id}>

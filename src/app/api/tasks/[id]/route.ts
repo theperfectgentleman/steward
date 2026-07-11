@@ -35,6 +35,10 @@ export async function PATCH(
   const isAssignee =
     auth.user.role === "COMMITTEE_MEMBER" &&
     existing.assignedToId === auth.user.id;
+  const isSubtaskCreator =
+    auth.user.role === "COMMITTEE_MEMBER" &&
+    existing.parentId !== null &&
+    existing.createdById === auth.user.id;
 
   if (body.assignedToId !== undefined) {
     if (!isEditor) {
@@ -43,7 +47,7 @@ export async function PATCH(
   }
 
   if (body.status !== undefined) {
-    if (!isEditor && !isAssignee) {
+    if (!isEditor && !isAssignee && !isSubtaskCreator) {
       return NextResponse.json(
         { error: "Members may only update tasks assigned to them" },
         { status: 403 },

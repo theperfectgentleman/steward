@@ -70,11 +70,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(COMMITTEE_KEY);
     fetch("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
+    window.location.href = "/";
   }, []);
 
   useEffect(() => {
     const storedUserId = localStorage.getItem(SESSION_KEY);
-    if (!storedUserId) return;
+    if (!storedUserId) {
+      setLoading(false);
+      return;
+    }
 
     const storedCommittee = localStorage.getItem(COMMITTEE_KEY);
 

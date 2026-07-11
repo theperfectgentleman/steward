@@ -57,6 +57,7 @@ model User {
   attendances          Attendance[]
   createdMeetings      Meeting[]
   feedback             CommitteeFeedback[]
+  eventDeliverables    EventDeliverable[]
 }
 
 model Committee {
@@ -96,14 +97,27 @@ model Task {
   status       TaskStatus @default(TODO)
   dueDate      DateTime?
   committeeId  String
+  eventId      String?
+  parentId     String?
   assignedToId String?
   createdById  String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
   committee  Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  event      Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  parent     Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks   Task[]    @relation("TaskSubtasks")
   assignedTo User?     @relation("AssignedTasks", fields: [assignedToId], references: [id])
   createdBy  User?     @relation("CreatedTasks", fields: [createdById], references: [id])
+
+  @@index([eventId])
+  @@index([parentId])
+}
+
+enum DeliverableKind {
+  NOTE
+  LINK
 }
 
 model Event {
@@ -115,8 +129,25 @@ model Event {
   committeeId String
   createdAt   DateTime  @default(now())
 
-  committee Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  rsvps     EventRsvp[]
+  committee    Committee          @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  rsvps        EventRsvp[]
+  tasks        Task[]
+  deliverables EventDeliverable[]
+}
+
+model EventDeliverable {
+  id          String          @id @default(cuid())
+  eventId     String
+  title       String
+  kind        DeliverableKind
+  content     String
+  createdById String
+  createdAt   DateTime        @default(now())
+
+  event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdBy User  @relation(fields: [createdById], references: [id])
+
+  @@index([eventId])
 }
 
 model EventRsvp {

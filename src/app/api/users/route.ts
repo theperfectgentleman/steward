@@ -14,12 +14,16 @@ export async function GET() {
     select: {
       id: true,
       name: true,
-      email: isAdmin,
       role: true,
+      ...(isAdmin ? { email: true } : {}),
     },
   });
 
-  return NextResponse.json(users);
+  return NextResponse.json(users, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
 }
 
 export async function POST(request: Request) {

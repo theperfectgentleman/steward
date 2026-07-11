@@ -12,6 +12,7 @@ import {
   parseCommitteeSection,
 } from "@/lib/navigation";
 import { CommitteeSwitcher } from "@/components/CommitteeSwitcher";
+import { UserMenu } from "@/components/layout/UserMenu";
 
 const SECTION_LABELS: Record<string, string> = {
   overview: "Overview",
@@ -66,23 +67,7 @@ export function TopBar() {
             <CommitteeSwitcher />
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="hidden sm:block text-right">
-            <p className="text-sm font-semibold text-charcoal truncate max-w-[140px]">
-              {user.name}
-            </p>
-            <p className="text-xs text-muted capitalize">
-              {user.role.replace(/_/g, " ").toLowerCase()}
-            </p>
-          </div>
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-charcoal text-white font-bold text-sm">
-            {user.name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .slice(0, 2)}
-          </span>
-        </div>
+        <UserMenu />
       </div>
     </header>
   );

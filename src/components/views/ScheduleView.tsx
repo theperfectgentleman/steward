@@ -1,41 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppProvider";
 import { useCommitteeContext } from "@/hooks/useCommitteeContext";
 import { canEditTasks, canRsvp } from "@/lib/types";
-import { TimelineEditor } from "@/components/TimelineEditor";
 import { TouchButton } from "@/components/TouchButton";
 import { BottomSheet } from "@/components/BottomSheet";
-import { Plus } from "lucide-react";
+import { Plus, ChevronRight } from "lucide-react";
 
 type EventItem = {
   id: string;
   title: string;
   description: string | null;
   startDate: string;
+  progress: number;
+  doneCount: number;
+  totalCount: number;
   committee: { name: string; charterLetter: string };
   rsvps?: { userId: string; status: string; user?: { id: string; name: string } }[];
 };
 
-type TimelineGoal = {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate: string;
-  progress: number;
-};
-
 export function ScheduleView({ committeeId }: { committeeId: string }) {
+  const router = useRouter();
   const { user } = useApp();
   const { committee } = useCommitteeContext();
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [goals, setGoals] = useState<TimelineGoal[]>([]);
   const [rsvps, setRsvps] = useState<Record<string, "GOING" | "DECLINED">>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventDesc, setEventDesc] = useState("");
+  const [createError, setCreateError] = useState("");
 
   const canEdit = !!(user && canEditTasks(user.role));
   const showRsvp = !!(user && canRsvp(user.role));
@@ -63,14 +60,6 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
         }
       })
       .catch(() => setEvents([]));
-
-    fetch(`/api/timeline?committeeId=${committeeId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setGoals(data);
-        else setGoals([]);
-      })
-      .catch(() => setGoals([]));
   }, [committeeId, user]);
 
   useEffect(() => {
@@ -87,37 +76,34 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
     setRsvps((prev) => ({ ...prev, [eventId]: status }));
   };
 
-  const saveGoal = async (goal: TimelineGoal) => {
-    await fetch("/api/timeline", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: goal.id,
-        progress: goal.progress,
-        startDate: goal.startDate,
-        endDate: goal.endDate,
-      }),
-    });
-    load();
-  };
-
   const createEvent = async () => {
     if (!eventTitle.trim() || !eventDate || !committeeId) return;
-    await fetch("/api/events", {
+    if (!eventDesc.trim()) {
+      setCreateError("Add a description so AI can generate tasks.");
+      return;
+    }
+    setCreateError("");
+    const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: eventTitle.trim(),
-        description: eventDesc.trim() || undefined,
+        description: eventDesc.trim(),
         startDate: new Date(eventDate).toISOString(),
         committeeId,
       }),
     });
-    setEventTitle("");
-    setEventDate("");
-    setEventDesc("");
-    setCreateOpen(false);
-    load();
+    const data = await res.json();
+    if (data?.id) {
+      setEventTitle("");
+      setEventDate("");
+      setEventDesc("");
+      setCreateOpen(false);
+      router.push(`/c/${committeeId}/schedule/${data.id}`);
+    } else {
+      setCreateError("Failed to create event.");
+      load();
+    }
   };
 
   return (
@@ -137,57 +123,68 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
         )}
       </div>
 
-      {goals.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
-            Timeline Horizon
-          </h2>
-          {goals.map((g) => (
-            <TimelineEditor
-              key={g.id}
-              goal={g}
-              canEdit={canEdit}
-              onSave={saveGoal}
-            />
-          ))}
-        </section>
-      )}
-
       <section className="space-y-4">
-        <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
-          Agenda
+        <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+          Events &amp; progress
         </h2>
         <ul className="space-y-4">
           {events.map((ev) => (
             <li
               key={ev.id}
-              className="bg-white rounded-2xl border border-charcoal/10 p-5 space-y-4"
+              className="bg-white rounded-2xl border border-charcoal/5 shadow-2xs hover:shadow-xs transition-all overflow-hidden"
             >
-              <div>
-                <h3 className="text-lg font-bold text-charcoal">{ev.title}</h3>
-                {ev.description && (
-                  <p className="text-sm text-muted mt-1">{ev.description}</p>
-                )}
-                <time className="text-sm font-medium text-charcoal mt-2 block">
-                  {new Date(ev.startDate).toLocaleString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </time>
-              </div>
+              <Link
+                href={`/c/${committeeId}/schedule/${ev.id}`}
+                className="block p-5 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-charcoal">{ev.title}</h3>
+                    {ev.description && (
+                      <p className="text-sm text-muted mt-1 line-clamp-2 font-medium">
+                        {ev.description}
+                      </p>
+                    )}
+                    <time className="text-xs font-semibold text-muted bg-slate-50 border border-charcoal/5 px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 mt-3">
+                      {new Date(ev.startDate).toLocaleString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </time>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-muted shrink-0 mt-1" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-muted">
+                      {ev.totalCount > 0
+                        ? `${ev.doneCount}/${ev.totalCount} tasks done`
+                        : "No tasks yet"}
+                    </span>
+                    <span className="text-accent">{ev.progress}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all"
+                      style={{ width: `${ev.progress}%` }}
+                    />
+                  </div>
+                </div>
+              </Link>
 
               {showRsvp && (
-                <div className="flex gap-3">
+                <div className="flex gap-3 px-5 pb-5">
                   <button
                     type="button"
                     onClick={() => handleRsvp(ev.id, "GOING")}
-                    className={`flex-1 touch-target-lg rounded-xl font-semibold border-2 transition-all ${
+                    className={`flex-1 touch-target-lg rounded-xl font-bold border transition-all cursor-pointer ${
                       rsvps[ev.id] === "GOING"
-                        ? "bg-primary border-primary text-charcoal"
-                        : "border-charcoal/15 hover:border-primary"
+                        ? "bg-primary border-primary text-charcoal shadow-2xs"
+                        : "bg-white border-charcoal/10 hover:border-primary text-charcoal-muted"
                     }`}
                   >
                     Going
@@ -195,10 +192,10 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
                   <button
                     type="button"
                     onClick={() => handleRsvp(ev.id, "DECLINED")}
-                    className={`flex-1 touch-target-lg rounded-xl font-semibold border-2 transition-all ${
+                    className={`flex-1 touch-target-lg rounded-xl font-bold border transition-all cursor-pointer ${
                       rsvps[ev.id] === "DECLINED"
-                        ? "bg-charcoal border-charcoal text-white"
-                        : "border-charcoal/15 hover:border-charcoal"
+                        ? "bg-charcoal border-charcoal text-white shadow-2xs"
+                        : "bg-white border-charcoal/10 hover:border-charcoal text-charcoal-muted"
                     }`}
                   >
                     Declined
@@ -209,41 +206,49 @@ export function ScheduleView({ committeeId }: { committeeId: string }) {
           ))}
         </ul>
         {events.length === 0 && (
-          <p className="text-center text-muted py-8">No upcoming events.</p>
+          <p className="text-center text-muted font-medium py-8 bg-white/50 rounded-2xl border border-charcoal/5 border-dashed">
+            No upcoming events.
+          </p>
         )}
       </section>
 
-      <BottomSheet open={createOpen} onClose={() => setCreateOpen(false)} title="New Event">
+      <BottomSheet open={createOpen} onClose={() => setCreateOpen(false)} title="New Event" size="lg">
         <div className="space-y-4">
           <label className="block">
-            <span className="text-sm font-semibold">Title</span>
+            <span className="text-xs font-bold text-accent uppercase tracking-wider">Title</span>
             <input
               type="text"
               value={eventTitle}
               onChange={(e) => setEventTitle(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
               placeholder="e.g. Site walkthrough"
             />
           </label>
           <label className="block">
-            <span className="text-sm font-semibold">Date & Time</span>
+            <span className="text-xs font-bold text-accent uppercase tracking-wider">Date & Time</span>
             <input
               type="datetime-local"
               value={eventDate}
               onChange={(e) => setEventDate(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+              className="mt-2 w-full input-touch px-4 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base font-semibold"
             />
           </label>
           <label className="block">
-            <span className="text-sm font-semibold">Description (optional)</span>
-            <input
-              type="text"
+            <span className="text-xs font-bold text-accent uppercase tracking-wider">
+              Description
+            </span>
+            <textarea
               value={eventDesc}
               onChange={(e) => setEventDesc(e.target.value)}
-              className="mt-2 w-full input-touch px-4 rounded-xl border-2 border-charcoal/15 focus:border-primary outline-none"
+              rows={4}
+              placeholder="Describe the event in detail — used for AI task generation."
+              className="mt-2 w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-base"
             />
           </label>
-          <TouchButton size="lg" className="w-full" onClick={createEvent}>
+          {createError && (
+            <p className="text-sm text-accent font-medium">{createError}</p>
+          )}
+          <TouchButton size="lg" className="w-full mt-2" onClick={createEvent}>
             Create Event
           </TouchButton>
         </div>
