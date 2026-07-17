@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Smaller runtime image for Dokploy (build happens in CI, not on the VPS)
+  output: "standalone",
 };
 
 export default nextConfig;

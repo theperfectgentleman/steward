@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TouchButton } from "@/components/TouchButton";
 import type { AttentionUrgency } from "@/lib/types";
 import type { AttentionItem } from "@/lib/attention";
@@ -18,6 +20,108 @@ const URGENCY_STYLES: Record<AttentionUrgency, string> = {
   WAITING: "border-l-charcoal/40 bg-charcoal/5",
   FYI: "border-l-charcoal/20 bg-white",
 };
+
+function StackedAttentionGroup({
+  urgency,
+  items,
+  onAction,
+}: {
+  urgency: AttentionUrgency;
+  items: AttentionItem[];
+  onAction?: (item: AttentionItem) => void;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const handlePrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1));
+  };
+
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0));
+  };
+
+  const activeItem = items[activeIndex];
+  const showNav = items.length > 1;
+
+  return (
+    <div className={`relative isolate ${showNav ? "pb-4 mb-2" : ""}`}>
+      {/* Behind cards stack container */}
+      {showNav && (
+        <>
+          {/* Card behind 1 */}
+          <div className="absolute -bottom-2 left-2.5 right-2.5 h-full rounded-xl border border-charcoal/10 bg-white pointer-events-none -z-10 transform scale-[0.98] origin-bottom transition-all duration-300 shadow-xs" />
+          {/* Card behind 2 */}
+          {items.length > 2 && (
+            <div className="absolute -bottom-4 left-5 right-5 h-full rounded-xl border border-charcoal/10 bg-white/80 pointer-events-none -z-20 transform scale-[0.96] origin-bottom transition-all duration-300 shadow-2xs" />
+          )}
+        </>
+      )}
+
+      {/* Active Card */}
+      <div
+        className={`relative z-10 rounded-xl border border-charcoal/10 border-l-4 p-4 bg-white shadow-xs ${URGENCY_STYLES[urgency]}`}
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-charcoal text-base leading-snug">{activeItem.title}</p>
+              <p className="text-sm text-muted mt-1 font-medium">{activeItem.subtitle}</p>
+            </div>
+            <div className="flex gap-2 shrink-0 items-center">
+              {activeItem.primaryAction && (
+                <TouchButton
+                  size="md"
+                  onClick={() => onAction?.(activeItem)}
+                  className="min-w-[120px]"
+                >
+                  {activeItem.primaryAction.label}
+                </TouchButton>
+              )}
+              <Link
+                href={activeItem.href}
+                className="touch-target inline-flex items-center justify-center px-4 py-2 rounded-xl border border-charcoal/15 text-sm font-semibold text-charcoal hover:bg-charcoal/5 transition-colors"
+              >
+                Open
+              </Link>
+            </div>
+          </div>
+
+          {/* Navigation panel */}
+          {showNav && (
+            <div className="flex items-center justify-between border-t border-charcoal/10 pt-3 mt-1">
+              <span className="text-xs font-bold text-accent uppercase tracking-wider select-none">
+                {items.length} items waiting
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrev}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-charcoal/15 bg-white text-charcoal shadow-xs hover:bg-slate-50 active:scale-95 transition-all cursor-pointer"
+                  aria-label="Previous item"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-xs font-bold text-charcoal tabular-nums select-none min-w-[32px] text-center">
+                  {activeIndex + 1} / {items.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-charcoal/15 bg-white text-charcoal shadow-xs hover:bg-slate-50 active:scale-95 transition-all cursor-pointer"
+                  aria-label="Next item"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   items: AttentionItem[];
@@ -51,40 +155,14 @@ export function AttentionFeed({ items, onAction, compact }: Props) {
               {URGENCY_LABELS[group.urgency]}
             </h3>
           )}
-          <ul className="space-y-3">
-            {group.items.map((item) => (
-              <li
-                key={item.id}
-                className={`rounded-xl border border-charcoal/10 border-l-4 p-4 bg-white ${URGENCY_STYLES[item.urgency]}`}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-charcoal">{item.title}</p>
-                    <p className="text-sm text-muted mt-0.5">{item.subtitle}</p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    {item.primaryAction && (
-                      <TouchButton
-                        size="md"
-                        onClick={() => onAction?.(item)}
-                        className="min-w-[120px]"
-                      >
-                        {item.primaryAction.label}
-                      </TouchButton>
-                    )}
-                    <Link
-                      href={item.href}
-                      className="touch-target inline-flex items-center justify-center px-4 py-2 rounded-xl border border-charcoal/15 text-sm font-medium text-charcoal hover:bg-charcoal/5"
-                    >
-                      Open
-                    </Link>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <StackedAttentionGroup
+            urgency={group.urgency}
+            items={group.items}
+            onAction={onAction}
+          />
         </section>
       ))}
     </div>
   );
 }
+
