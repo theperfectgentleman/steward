@@ -7,10 +7,15 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-/** Dokploy defaults to createEnvFile=true, writing vars to /app/.env instead of process.env. */
+/** Dokploy writes .env beside the Dockerfile before build when createEnvFile=true. */
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return false;
   const content = fs.readFileSync(filePath, "utf8");
+  if (!content.trim()) {
+    console.log(`${filePath} exists but is empty (0 bytes of config)`);
+    return false;
+  }
+  let loaded = 0;
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -24,15 +29,26 @@ function loadEnvFile(filePath) {
     ) {
       val = val.slice(1, -1);
     }
-    if (process.env[key] === undefined) process.env[key] = val;
+    if (process.env[key] === undefined) {
+      process.env[key] = val;
+      loaded++;
+    }
   }
-  console.log(`Loaded environment from ${filePath}`);
-  return true;
+  console.log(`Loaded ${loaded} variable(s) from ${filePath}`);
+  return loaded > 0;
 }
 
+console.log("Steward entrypoint starting...");
 for (const envPath of ["/app/.env", path.join(process.cwd(), ".env")]) {
   if (loadEnvFile(envPath)) break;
 }
+const dbKeys = Object.keys(process.env).filter(
+  (k) => k === "DATABASE_URL" || k.startsWith("DB_"),
+);
+console.log(
+  "DB keys after env load:",
+  dbKeys.length ? dbKeys.join(", ") : "(none)",
+);
 
 function present(name) {
   const v = process.env[name];
@@ -90,6 +106,11 @@ const migrate = spawnSync("prisma", ["migrate", "deploy"], {
   shell: false,
 });
 if (migrate.status !== 0) {
+  console.error(
+    "ERROR: prisma migrate deploy failed (exit",
+    migrate.status ?? 1,
+    ") — check DATABASE_URL / DB_HOST and that Postgres accepts connections from Docker.",
+  );
   process.exit(migrate.status ?? 1);
 }
 
