@@ -71,13 +71,13 @@ function buildDatabaseUrl() {
     "DB-related keys visible in container:",
     keys.length ? keys.join(", ") : "(none)",
   );
-  if (fs.existsSync("/app/.env")) {
-    console.error("Hint: /app/.env exists but was not loaded — check file format.");
-  } else {
-    console.error(
-      "Hint: In Dokploy Environment, disable 'Create .env file' so vars are injected as process.env, or ensure /app/.env is mounted.",
-    );
-  }
+  const hasEnvFile = fs.existsSync("/app/.env");
+  const envFileSize = hasEnvFile ? fs.statSync("/app/.env").size : 0;
+  console.error(
+    "Hint: /app/.env",
+    hasEnvFile ? `exists (${envFileSize} bytes)` : "missing",
+    "— in Dokploy enable 'Create Environment File', save your vars above it, then redeploy.",
+  );
   process.exit(1);
 }
 

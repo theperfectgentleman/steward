@@ -17,6 +17,8 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Dokploy writes .env before build; local builds without one get an empty placeholder.
+RUN test -f .env || touch .env
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 # DATABASE_URL is only needed so Prisma can resolve config during generate; migrations run at container start.
@@ -49,6 +51,8 @@ COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/package.json ./package.json
 
 COPY --chown=nextjs:nodejs scripts/docker-entrypoint.js /app/docker-entrypoint.js
+# Runtime secrets: baked from Dokploy-generated .env at build time, or use docker run --env-file locally.
+COPY --from=builder --chown=nextjs:nodejs /app/.env ./.env
 
 USER nextjs
 EXPOSE 3000
