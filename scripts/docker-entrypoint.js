@@ -4,6 +4,35 @@
  * Builds DATABASE_URL from DB_* (so passwords with ! @ # work), then migrates and starts the app.
  */
 const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+
+/** Dokploy defaults to createEnvFile=true, writing vars to /app/.env instead of process.env. */
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  const content = fs.readFileSync(filePath, "utf8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (process.env[key] === undefined) process.env[key] = val;
+  }
+  console.log(`Loaded environment from ${filePath}`);
+  return true;
+}
+
+for (const envPath of ["/app/.env", path.join(process.cwd(), ".env")]) {
+  if (loadEnvFile(envPath)) break;
+}
 
 function present(name) {
   const v = process.env[name];
@@ -42,6 +71,13 @@ function buildDatabaseUrl() {
     "DB-related keys visible in container:",
     keys.length ? keys.join(", ") : "(none)",
   );
+  if (fs.existsSync("/app/.env")) {
+    console.error("Hint: /app/.env exists but was not loaded — check file format.");
+  } else {
+    console.error(
+      "Hint: In Dokploy Environment, disable 'Create .env file' so vars are injected as process.env, or ensure /app/.env is mounted.",
+    );
+  }
   process.exit(1);
 }
 
