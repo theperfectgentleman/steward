@@ -31,8 +31,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --system --gid 1001 nodejs \
-  && useradd --system --uid 1001 --gid nodejs nextjs \
-  && npm install -g prisma@7.8.0 dotenv
+  && useradd --system --uid 1001 --gid nodejs nextjs
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -44,8 +43,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# prisma.config.ts imports dotenv/config at migrate time (devDependency; not in standalone output)
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/dotenv ./node_modules/dotenv
+# Prisma CLI + config deps for `prisma migrate deploy` (not bundled in Next standalone)
+RUN npm install prisma@7.8.0 dotenv --ignore-scripts && npm cache clean --force \
+  && chown -R nextjs:nodejs /app/node_modules
 
 # Prisma: schema, migrations, generated client, config
 COPY --from=builder /app/prisma ./prisma

@@ -100,7 +100,11 @@ function buildDatabaseUrl() {
 process.env.DATABASE_URL = buildDatabaseUrl();
 
 console.log("Running database migrations...");
-const migrate = spawnSync("prisma", ["migrate", "deploy"], {
+const prismaCli = "/app/node_modules/prisma/build/index.js";
+const migrate = spawnSync(
+  fs.existsSync(prismaCli) ? process.execPath : "prisma",
+  fs.existsSync(prismaCli) ? [prismaCli, "migrate", "deploy"] : ["migrate", "deploy"],
+  {
   stdio: "inherit",
   env: process.env,
   shell: false,
