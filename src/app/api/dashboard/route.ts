@@ -166,6 +166,12 @@ export async function GET(request: Request) {
       })
     : [];
 
+  const timelineGoals = await prisma.timelineGoal.findMany({
+    where: committeeFilter,
+    include: { committee: { select: { id: true, name: true, charterLetter: true } } },
+    orderBy: { startDate: "asc" },
+  });
+
   const alerts = [
     ...recentTasks
       .filter((t) => t.status === "BLOCKED")
@@ -228,5 +234,6 @@ export async function GET(request: Request) {
     myAssignmentDrafts,
     pendingInbox,
     myOpenTaskList,
+    timelineGoals,
   });
 }

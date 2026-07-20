@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { BrandLogo } from "@/components/BrandLogo";
 import { TouchButton } from "@/components/TouchButton";
@@ -37,6 +38,7 @@ export default function InvitePage({
   const [channel, setChannel] = useState<"EMAIL" | "SMS">("EMAIL");
   const [otpCode, setOtpCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -296,13 +298,23 @@ export default function InvitePage({
           {step === "password" && (
             <>
               <p className="text-sm font-semibold text-charcoal">Create your password</p>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                className={FORM_FIELD_CLASS}
-              />
+              <div className="relative w-full">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className={`${FORM_FIELD_CLASS} pr-12`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal/45 hover:text-charcoal focus:outline-none p-2"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
               {error && (
                 <p className="text-sm text-accent bg-accent/10 rounded-xl p-3">{error}</p>
               )}

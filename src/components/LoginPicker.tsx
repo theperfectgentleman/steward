@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { TouchButton } from "./TouchButton";
 import { BrandLogo } from "./BrandLogo";
 import { InstallAppPrompt } from "./InstallAppPrompt";
@@ -11,6 +12,8 @@ export function LoginPicker() {
   const { login } = useApp();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [resetMode, setResetMode] = useState(false);
@@ -127,15 +130,25 @@ export function LoginPicker() {
                 className={FORM_FIELD_CLASS}
                 autoComplete="username"
               />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={FORM_FIELD_CLASS}
-                autoComplete="current-password"
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              />
+              <div className="relative w-full">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`${FORM_FIELD_CLASS} pr-12`}
+                  autoComplete="current-password"
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal/45 hover:text-charcoal focus:outline-none p-2"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
               {error && (
                 <p className="text-sm text-accent bg-accent/10 rounded-xl p-3">{error}</p>
               )}
@@ -222,13 +235,23 @@ export function LoginPicker() {
               )}
               {resetStep === "password" && (
                 <>
-                  <input
-                    type="password"
-                    placeholder="New password (min 8 characters)"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className={FORM_FIELD_CLASS}
-                  />
+                  <div className="relative w-full">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      placeholder="New password (min 8 characters)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className={`${FORM_FIELD_CLASS} pr-12`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal/45 hover:text-charcoal focus:outline-none p-2"
+                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                    >
+                      {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
                   <TouchButton
                     size="lg"
                     className="w-full"

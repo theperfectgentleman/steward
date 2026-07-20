@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ClipboardCheck, FileText, MessageSquarePlus } from "lucide-react";
 import { AlertFeed, type AlertItem } from "@/components/AlertFeed";
+import { GanttChart, type GanttItem } from "@/components/GanttChart";
 import { MyWorkHub } from "@/components/MyWorkHub";
 import { DashboardStatsPanel } from "@/components/DashboardStatsPanel";
 import { QuickActionLink } from "@/components/QuickActionLink";
@@ -41,6 +42,8 @@ export function OverallDashboardView() {
     { id: string; title: string; targetCommittee: { id: string; name: string } }[]
   >([]);
   const [assignmentDrafts, setAssignmentDrafts] = useState(0);
+  const [timelineGoals, setTimelineGoals] = useState<GanttItem[]>([]);
+  const [viewMode, setViewMode] = useState<"gantt" | "cards">("gantt");
 
   const perm = user ? toPermissionUser(user) : null;
   const isExecutive = perm && canViewAllCommittees(perm);
@@ -54,6 +57,7 @@ export function OverallDashboardView() {
         setPipeline(data.assignmentPipeline ?? []);
         setAwaitingClose(data.awaitingMyClose ?? []);
         setAssignmentDrafts(data.myAssignmentDrafts ?? 0);
+        setTimelineGoals(data.timelineGoals ?? []);
         setAlerts(
           (data.alerts ?? []).map((a: AlertItem & { time: string; href?: string }) => ({
             ...a,
@@ -218,10 +222,28 @@ export function OverallDashboardView() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section id="dashboard-committees" className="lg:col-span-2 space-y-2">
-          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
-            Committees
-          </h2>
-          {stats.length === 0 ? (
+          <div className="flex items-center justify-between">
+            <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
+              Committee Project Timeline & Status
+            </h2>
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-charcoal/10">
+              <button
+                onClick={() => setViewMode("gantt")}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewMode === 'gantt' ? 'bg-white shadow-sm text-charcoal' : 'text-muted hover:text-charcoal'}`}
+              >
+                Timeline
+              </button>
+              <button
+                onClick={() => setViewMode("cards")}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewMode === 'cards' ? 'bg-white shadow-sm text-charcoal' : 'text-muted hover:text-charcoal'}`}
+              >
+                Cards
+              </button>
+            </div>
+          </div>
+          {viewMode === "gantt" ? (
+             <GanttChart items={timelineGoals} />
+          ) : stats.length === 0 ? (
             <p className="text-center text-muted py-6 rounded-xl border border-charcoal/5 bg-white text-sm">
               No committee data yet.
             </p>
@@ -268,7 +290,7 @@ export function OverallDashboardView() {
 
         <section id="dashboard-alerts" className="space-y-2">
           <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
-            Alert Feed
+            Alerts & Activity Feed (Paged)
           </h2>
           <AlertFeed alerts={alerts} onAlertClick={handleAlertClick} />
         </section>
