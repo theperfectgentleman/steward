@@ -42,9 +42,11 @@ export function CreateAssignmentForm({
   const [committees, setCommittees] = useState<
     { id: string; name: string; charterLetter: string }[]
   >([]);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [targetCommitteeId, setTargetCommitteeId] = useState("");
+  const [assigneeUserId, setAssigneeUserId] = useState("");
   const [priority, setPriority] = useState<AssignmentPriority>("NORMAL");
   const [dueDate, setDueDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -54,10 +56,20 @@ export function CreateAssignmentForm({
       .then((r) => r.json())
       .then(setCommittees)
       .catch(() => undefined);
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setUsers(data);
+      })
+      .catch(() => undefined);
   }, []);
 
+  const canSubmit = Boolean(
+    title.trim() && (targetCommitteeId || assigneeUserId) && !submitting,
+  );
+
   const submit = async (asDraft: boolean) => {
-    if (!title.trim() || !targetCommitteeId || submitting) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/assignments", {
@@ -66,8 +78,9 @@ export function CreateAssignmentForm({
         body: JSON.stringify({
           title: title.trim(),
           description: normalizeRichText(description),
-          source: "PRESBYTERY",
-          targetCommitteeId,
+          source: "SUPERVISORY",
+          targetCommitteeId: targetCommitteeId || undefined,
+          assigneeUserId: assigneeUserId || undefined,
           priority,
           dueDate: dueDate || undefined,
           status: asDraft ? "DRAFT" : "ASSIGNED",
@@ -77,6 +90,7 @@ export function CreateAssignmentForm({
       setTitle("");
       setDescription("");
       setTargetCommitteeId("");
+      setAssigneeUserId("");
       setDueDate("");
       refreshAttention();
       onSuccess?.(data.id);
@@ -90,25 +104,25 @@ export function CreateAssignmentForm({
 
   const shellClass = embedded
     ? "space-y-4 p-1"
-    : "space-y-6 rounded-2xl border border-charcoal/10 bg-white p-5 lg:p-8 shadow-xs";
+    : "space-y-4 rounded-xl border border-charcoal/10 bg-white p-4 shadow-xs";
 
   return (
     <div className={shellClass}>
       {!embedded && (
-        <div className="border-b border-charcoal/5 pb-5">
+        <div className="border-b border-charcoal/5 pb-3">
           <h2 className="text-lg font-bold text-charcoal">New directive</h2>
           <p className="text-sm text-muted mt-1 leading-relaxed max-w-2xl">
-            Draft a directive for a committee. All Presbytery members can assign;
-            everyone sees the trail. Distinct from member suggestions and
-            chair-to-chair referrals.
+            Draft a directive for a committee and/or a person. All Presbytery
+            members can assign; everyone sees the trail. Distinct from member
+            suggestions and chair-to-chair referrals.
           </p>
         </div>
       )}
 
       {embedded && (
         <p className="text-sm text-muted leading-relaxed">
-          Draft a directive for a committee. All Presbytery members can assign;
-          everyone sees the trail.
+          Draft a directive for a committee and/or a person. All Presbytery
+          members can assign; everyone sees the trail.
         </p>
       )}
 
@@ -129,24 +143,43 @@ export function CreateAssignmentForm({
           <RichTextEditor
             value={description}
             onChange={setDescription}
-            placeholder="What should the committee do? Include context, deliverables, and deadlines."
+            placeholder="What should be done? Include context, deliverables, and deadlines."
             minHeight={embedded ? "120px" : "220px"}
             compact={embedded}
           />
         </div>
 
-        <div className={embedded ? "space-y-5" : "grid gap-5 lg:grid-cols-3"}>
-          <div className={embedded ? undefined : "lg:col-span-1"}>
+        <div className={embedded ? "space-y-5" : "grid gap-5 lg:grid-cols-2"}>
+          <div>
             <FieldLabel htmlFor="assignment-committee">Target committee</FieldLabel>
             <SearchableCommitteeSelect
               id="assignment-committee"
               committees={committees}
               value={targetCommitteeId}
               onChange={setTargetCommitteeId}
-              emptyLabel="Select committee"
+              emptyLabel="Select committee (optional if assignee set)"
+              allowEmpty
             />
           </div>
 
+          <div>
+            <FieldLabel htmlFor="assignment-assignee">Assignee</FieldLabel>
+            <FormSelect
+              id="assignment-assignee"
+              value={assigneeUserId}
+              onChange={(e) => setAssigneeUserId(e.target.value)}
+            >
+              <option value="">Select person (optional if committee set)</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </FormSelect>
+          </div>
+        </div>
+
+        <div className={embedded ? "space-y-5" : "grid gap-5 lg:grid-cols-2"}>
           <div>
             <FieldLabel htmlFor="assignment-priority">Priority</FieldLabel>
             <FormSelect
@@ -182,7 +215,7 @@ export function CreateAssignmentForm({
           <TouchButton
             variant="secondary"
             className={embedded ? "w-full" : "sm:flex-1"}
-            disabled={!title.trim() || !targetCommitteeId || submitting}
+            disabled={!canSubmit}
             onClick={() => submit(true)}
           >
             Save as draft
@@ -190,7 +223,7 @@ export function CreateAssignmentForm({
         )}
         <TouchButton
           className={embedded ? "w-full" : "sm:flex-[1.4]"}
-          disabled={!title.trim() || !targetCommitteeId || submitting}
+          disabled={!canSubmit}
           onClick={() => submit(false)}
         >
           {submitting ? "Assigning…" : "Assign now"}

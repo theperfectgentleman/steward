@@ -111,11 +111,41 @@ export async function buildAttentionItems(
           kind: a.source === "COMMITTEE_REFERRAL" ? "REFERRAL" : "ASSIGNMENT",
           urgency: staleAssigned(a.createdAt) || isOverdue(a.dueDate) ? "NOW" : "NOW",
           title: a.title,
-          subtitle: `From ${a.createdBy.name} · ${a.targetCommittee.name}`,
-          href: `/assignments/${a.id}?action=accept`,
+          subtitle: `From ${a.createdBy.name} · ${a.targetCommittee?.name ?? "Personal"}`,
+          href: `/assignments/${a.id}?action=receive`,
           primaryAction: {
-            label: "Accept",
+            label: "Receive",
             action: "accept",
+            entityType: "ASSIGNMENT",
+            entityId: a.id,
+          },
+        });
+      }
+
+      const accepted = await prisma.assignment.findMany({
+        where: {
+          targetCommitteeId: committeeId,
+          status: "ACCEPTED",
+          projects: { none: {} },
+        },
+        include: {
+          targetCommittee: { select: { name: true } },
+          createdBy: { select: { name: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+
+      for (const a of accepted) {
+        items.push({
+          id: `assign-create-${a.id}`,
+          kind: a.source === "COMMITTEE_REFERRAL" ? "REFERRAL" : "ASSIGNMENT",
+          urgency: "NOW",
+          title: a.title,
+          subtitle: `Received · create a project · ${a.targetCommittee?.name ?? "Personal"}`,
+          href: `/assignments/${a.id}?action=create-project`,
+          primaryAction: {
+            label: "Create project",
+            action: "create_project",
             entityType: "ASSIGNMENT",
             entityId: a.id,
           },
@@ -138,7 +168,7 @@ export async function buildAttentionItems(
           kind: "REVIEW",
           urgency: "NOW",
           title: a.title,
-          subtitle: `Awaiting chair approval · ${a.targetCommittee.name}`,
+          subtitle: `Awaiting chair approval · ${a.targetCommittee?.name ?? "Personal"}`,
           href: `/assignments/${a.id}?action=approve`,
           primaryAction: {
             label: "Approve",
@@ -158,13 +188,16 @@ export async function buildAttentionItems(
       });
 
       for (const m of pendingMinutes) {
+        const href = m.eventId
+          ? `${committeePath(committeeId, "schedule")}/${m.eventId}`
+          : committeePath(committeeId, "schedule");
         items.push({
           id: `minutes-${m.id}`,
           kind: "MINUTES",
           urgency: "NOW",
           title: m.title,
-          subtitle: `Approve minutes · ${m.committee.name}`,
-          href: `${committeePath(committeeId, "minutes")}?meeting=${m.id}`,
+          subtitle: `Approve minutes · ${m.committee?.name ?? "Committee"}`,
+          href,
           primaryAction: {
             label: "Review minutes",
             action: "review_minutes",
@@ -186,13 +219,16 @@ export async function buildAttentionItems(
       });
 
       for (const m of recentUnfiled) {
+        const href = m.eventId
+          ? `${committeePath(committeeId, "schedule")}/${m.eventId}`
+          : committeePath(committeeId, "schedule");
         items.push({
           id: `minutes-file-${m.id}`,
           kind: "MINUTES",
           urgency: "SOON",
           title: m.title,
           subtitle: "Finish filing minutes",
-          href: `${committeePath(committeeId, "minutes")}?meeting=${m.id}`,
+          href,
         });
       }
     }
@@ -213,7 +249,7 @@ export async function buildAttentionItems(
         kind: "ASSIGNMENT",
         urgency: "NOW",
         title: a.title,
-        subtitle: `Awaiting your close · ${a.targetCommittee.name}`,
+        subtitle: `Awaiting your close · ${a.targetCommittee?.name ?? "Personal"}`,
         href: `/assignments/${a.id}?action=close`,
         primaryAction: {
           label: "Close",
@@ -235,7 +271,7 @@ export async function buildAttentionItems(
         kind: "ASSIGNMENT",
         urgency: "SOON",
         title: a.title,
-        subtitle: `Draft · ${a.targetCommittee.name}`,
+        subtitle: `Draft · ${a.targetCommittee?.name ?? "Personal"}`,
         href: `/assignments/${a.id}`,
         primaryAction: {
           label: "Assign",
@@ -270,7 +306,7 @@ export async function buildAttentionItems(
         kind: "ASSIGNMENT",
         urgency: "WAITING",
         title: a.title,
-        subtitle: `${a.status.replace(/_/g, " ")} · ${a.targetCommittee.name}`,
+        subtitle: `${a.status.replace(/_/g, " ")} · ${a.targetCommittee?.name ?? "Personal"}`,
         href: `/assignments/${a.id}`,
       });
     }

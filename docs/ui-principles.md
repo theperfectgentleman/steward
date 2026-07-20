@@ -33,7 +33,7 @@ Within a committee: Overview, Board (Tasks), Schedule, Minutes. Each mode is sco
 
 ## 8. Information density with scanning aids
 
-Use status badges, progress bars, large KPI numbers, and muted metadata. Executives scan health quickly; secretaries drill into detail.
+Prefer compact spacing so executives can scan health without scrolling past empty card chrome. Use status badges, progress bars, and KPI numbers—readable, not oversized. Prefer `space-y-4`, `text-xl` page titles, and tight card padding (`px-3 py-2.5`) on content-heavy surfaces.
 
 ## 9. Local vs global controls
 
@@ -41,7 +41,7 @@ Global: navigation, profile, sign out. Local: filters, create actions, and board
 
 ## 10. Touch-friendly targets
 
-Minimum 48×48px interactive targets (56px for primary actions). Applies on desktop and mobile.
+Desktop/fine pointer: ~40×40px minimum. Coarse pointer and phones: ~44–48px. Do not inflate entire card layouts just to meet touch targets—apply targets to interactive controls.
 
 ## 11. Role-tailored landing
 

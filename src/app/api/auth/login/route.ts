@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail, normalizePhone } from "@/lib/identity";
 import { verifyPassword } from "@/lib/password";
-import { setSessionCookie, toSessionPayload } from "@/lib/session";
+import { clearActiveOrgCookie, setSessionCookie, toSessionPayload } from "@/lib/session";
+import { listUserOrganizations } from "@/lib/organizations";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -28,8 +29,12 @@ export async function POST(request: Request) {
       OR: [{ email }, { phone: identifier }, { phone }],
     },
     include: {
+      platformAdmin: true,
+      organizationMemberships: {
+        include: { organization: true },
+      },
       committeeMemberships: true,
-      presbyteryMembership: true,
+      supervisoryMemberships: true,
     },
   });
 
@@ -48,8 +53,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = toSessionPayload(user);
+  const memberships = await listUserOrganizations(user.id);
+  const payload = {
+    ...toSessionPayload({
+      ...user,
+      isPlatformAdmin: Boolean(user.platformAdmin),
+      orgContext: null,
+      supervisoryMemberships: user.supervisoryMemberships,
+    }),
+    memberships,
+    activeOrganizationId: null,
+    organization: null,
+    committeeIds: [],
+    committeeMemberships: [],
+    supervisoryMembership: null,
+    presbyteryMembership: null,
+  };
+
   const response = NextResponse.json(payload);
   setSessionCookie(response, user.id);
+  clearActiveOrgCookie(response);
   return response;
 }

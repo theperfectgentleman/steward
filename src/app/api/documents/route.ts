@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import {
   asPermissionUser,
   assertCommitteeAccess,
-  requireUser,
+  requireActiveOrg,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LIBRARY_DOCUMENT_TAGS, type LibraryDocumentTag } from "@/lib/documents";
@@ -13,8 +13,8 @@ function canManageLibraryDocuments(
   perm: ReturnType<typeof asPermissionUser>,
   committeeId?: string | null,
 ) {
-  if (perm.role === "SYSTEM_ADMIN") return false;
-  if (perm.role === "SUPER_ADMIN" || perm.role === "CHURCH_EXECUTIVE") {
+  if (perm.role === "ORG_TECH") return false;
+  if (perm.role === "ORG_ADMIN" || perm.role === "ORG_PARTICIPANT") {
     return true;
   }
   if (!committeeId) return false;
@@ -22,20 +22,23 @@ function canManageLibraryDocuments(
 }
 
 export async function GET(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const tag = searchParams.get("tag");
+  const orgId = auth.org.organizationId;
 
   if (committeeId) {
     const access = assertCommitteeAccess(auth.user, committeeId);
     if (access) return access;
   }
 
-  const where: Prisma.LibraryDocumentWhereInput = {};
+  const where: Prisma.LibraryDocumentWhereInput = {
+    OR: [{ organizationId: orgId }, { organizationId: null }],
+  };
 
   if (tag && LIBRARY_DOCUMENT_TAGS.includes(tag as LibraryDocumentTag)) {
     where.tag = tag as LibraryDocumentTag;
@@ -45,9 +48,10 @@ export async function GET(request: Request) {
     where.committeeId = committeeId;
   } else if (!canViewAllCommittees(perm)) {
     const ids = auth.user.committeeMemberships.map((m) => m.committeeId);
-    where.OR = [
-      { committeeId: { in: ids } },
-      { committeeId: null },
+    where.AND = [
+      {
+        OR: [{ committeeId: { in: ids } }, { committeeId: null }],
+      },
     ];
   }
 
@@ -65,7 +69,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
@@ -110,6 +114,7 @@ export async function POST(request: Request) {
 
   const doc = await prisma.libraryDocument.create({
     data: {
+      organizationId: auth.org.organizationId,
       title: body.title.trim(),
       tag,
       source,

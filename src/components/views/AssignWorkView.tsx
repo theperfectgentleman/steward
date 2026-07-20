@@ -17,7 +17,8 @@ type RecentAssignment = {
   title: string;
   status: string;
   updatedAt: string;
-  targetCommittee: { name: string; charterLetter: string };
+  targetCommittee: { name: string; charterLetter: string } | null;
+  assignee?: { name: string } | null;
 };
 
 export function AssignWorkView() {
@@ -41,10 +42,10 @@ export function AssignWorkView() {
   }, [user]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 lg:space-y-8">
+    <div className="max-w-6xl mx-auto space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-charcoal">Assign work</h1>
+          <h1 className="text-xl font-bold text-charcoal">Assign work</h1>
           <p className="text-muted mt-1 max-w-xl">
             Send a presbytery directive to a committee with clear instructions and
             deadlines.
@@ -60,11 +61,11 @@ export function AssignWorkView() {
         </Link>
       </div>
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8 lg:items-start">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-4 lg:items-start">
         <CreateAssignmentForm />
 
         <aside className="space-y-4 lg:sticky lg:top-6">
-          <div className="rounded-2xl border border-charcoal/10 bg-white p-5 shadow-xs">
+          <div className="rounded-xl border border-charcoal/10 bg-white p-4 shadow-xs">
             <div className="flex items-center justify-between gap-3 mb-4">
               <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
                 Your recent directives
@@ -91,8 +92,11 @@ export function AssignWorkView() {
                           {a.title}
                         </p>
                         <p className="text-xs text-muted mt-1.5">
-                          {a.targetCommittee.charterLetter.toUpperCase()}){" "}
-                          {a.targetCommittee.name}
+                          {a.targetCommittee
+                            ? `${a.targetCommittee.charterLetter.toUpperCase()}) ${a.targetCommittee.name}`
+                            : a.assignee?.name
+                              ? `To ${a.assignee.name}`
+                              : "Personal"}
                         </p>
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <span className="text-[11px] font-semibold uppercase tracking-wide text-primary/80">

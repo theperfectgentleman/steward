@@ -3,7 +3,26 @@ import { assertCommitteeAccess, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import { asPermissionUser } from "@/lib/auth";
-import { canEditTasks } from "@/lib/types";
+import { canViewAllCommittees } from "@/lib/types";
+
+function canViewAssignment(
+  user: NonNullable<Awaited<ReturnType<typeof requireUser>>["user"]>,
+  assignment: {
+    targetCommitteeId: string | null;
+    assigneeUserId: string | null;
+    accountableOwnerId: string | null;
+    createdById: string;
+  },
+): ReturnType<typeof assertCommitteeAccess> | null {
+  if (assignment.createdById === user.id) return null;
+  if (assignment.assigneeUserId === user.id) return null;
+  if (assignment.accountableOwnerId === user.id) return null;
+  if (canViewAllCommittees(asPermissionUser(user))) return null;
+  if (assignment.targetCommitteeId) {
+    return assertCommitteeAccess(user, assignment.targetCommitteeId);
+  }
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+}
 
 export async function GET(
   _request: Request,
@@ -20,16 +39,19 @@ export async function GET(
       createdBy: { select: { id: true, name: true } },
       targetCommittee: { select: { id: true, name: true, charterLetter: true } },
       sourceCommittee: { select: { id: true, name: true } },
+      assignee: { select: { id: true, name: true } },
+      accountableOwner: { select: { id: true, name: true } },
       parentAssignment: { select: { id: true, title: true } },
       childAssignments: {
         select: { id: true, title: true, status: true },
       },
-      project: {
+      projects: {
         include: {
           tasks: {
             include: { assignedTo: { select: { id: true, name: true } } },
           },
         },
+        orderBy: { createdAt: "asc" },
       },
       rootTask: {
         include: {
@@ -44,10 +66,8 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const access = assertCommitteeAccess(auth.user, assignment.targetCommitteeId);
-  if (access && assignment.createdById !== auth.user.id) {
-    return access;
-  }
+  const access = canViewAssignment(auth.user, assignment);
+  if (access) return access;
 
   const activity = await prisma.activityLog.findMany({
     where: { entityType: "ASSIGNMENT", entityId: id },
@@ -83,10 +103,8 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const access = assertCommitteeAccess(auth.user, assignment.targetCommitteeId);
-  if (access && assignment.createdById !== auth.user.id) {
-    return access;
-  }
+  const access = canViewAssignment(auth.user, assignment);
+  if (access) return access;
 
   const comment = await prisma.comment.create({
     data: {

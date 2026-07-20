@@ -30,7 +30,7 @@ export async function POST(
   }
 
   const perm = asPermissionUser(auth.user);
-  if (!canInviteMembers(perm, invite.committeeId)) {
+  if (!invite.committeeId || !canInviteMembers(perm, invite.committeeId)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
@@ -43,6 +43,9 @@ export async function POST(
   }
 
   if (body.action === "resend") {
+    if (!invite.committee) {
+      return NextResponse.json({ error: "Invite has no committee" }, { status: 400 });
+    }
     const updated = await prisma.invite.update({
       where: { id: invite.id },
       data: {

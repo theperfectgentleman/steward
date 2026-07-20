@@ -1,11 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { MessageSquarePlus } from "lucide-react";
-import { HealthRing } from "@/components/HealthRing";
-import { AlertFeed, type AlertItem } from "@/components/AlertFeed";
-import { FeedbackReviewSheet } from "@/components/FeedbackReviewSheet";
+import { CommitteeWorkspaceTabs } from "@/components/layout/CommitteeWorkspaceTabs";
 import { InviteMemberSheet } from "@/components/InviteMemberSheet";
 import { TouchButton } from "@/components/TouchButton";
 import { useApp } from "@/providers/AppProvider";
@@ -13,22 +8,18 @@ import { useCommitteeContext } from "@/hooks/useCommitteeContext";
 import {
   canAcceptAssignments,
   canInviteMembers,
-  canReviewFeedback,
   canViewAllCommittees,
 } from "@/lib/types";
 import { toPermissionUser } from "@/lib/permissions-client";
 import { formatDate } from "@/lib/dates";
 import { buildCommitteeDashboardStats } from "@/lib/dashboard-kpis";
-import { DashboardStatsPanel } from "@/components/DashboardStatsPanel";
-import { committeePath, suggestionsPath } from "@/lib/navigation";
+import { DashboardStatGrid } from "@/components/DashboardStatsPanel";
+import { committeePath } from "@/lib/navigation";
 import { PageShimmer } from "@/components/loading/PageShimmer";
-import {
-  Calendar,
-  ClipboardList,
-  FileText,
-  FolderKanban,
-  Inbox,
-} from "lucide-react";
+import { HealthRing } from "@/components/HealthRing";
+import { AlertFeed, type AlertItem } from "@/components/AlertFeed";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 type CommitteeStat = {
   total: number;
@@ -69,7 +60,6 @@ export function CommitteeDashboardView() {
   const [pendingAssignments, setPendingAssignments] = useState(0);
   const [myOpenTasks, setMyOpenTasks] = useState(0);
   const perm = user ? toPermissionUser(user) : null;
-  const canReview = perm && canReviewFeedback(perm, committeeId ?? undefined);
   const canInbox =
     perm && committeeId ? canAcceptAssignments(perm, committeeId) : false;
   const canInvite =
@@ -85,6 +75,11 @@ export function CommitteeDashboardView() {
           perm,
         })
       : { attention: [], snapshot: [] };
+
+  const attentionTotal = kpiSections.attention.reduce((n, s) => {
+    const v = typeof s.value === "number" ? s.value : 0;
+    return n + v;
+  }, 0);
 
   const load = useCallback(() => {
     if (!committeeId) return;
@@ -114,7 +109,7 @@ export function CommitteeDashboardView() {
                 : committeePath(
                     committeeId,
                     a.type === "minutes"
-                      ? "minutes"
+                      ? "schedule"
                       : a.type === "blocked" || a.type === "completed"
                         ? "tasks"
                         : undefined,
@@ -163,44 +158,38 @@ export function CommitteeDashboardView() {
 
   if (!committee || !committeeId) {
     return (
-      <p className="text-muted text-center py-12">
+      <p className="text-muted text-center py-8">
         Committee not found or you do not have access.
       </p>
     );
   }
 
-  const shortcuts = [
-    { href: committeePath(committeeId, "tasks"), label: "Task Board", icon: ClipboardList },
-    { href: committeePath(committeeId, "projects"), label: "Projects", icon: FolderKanban },
-    { href: committeePath(committeeId, "assignments"), label: "Inbox", icon: Inbox },
-    { href: committeePath(committeeId, "schedule"), label: "Schedule", icon: Calendar },
-    { href: committeePath(committeeId, "minutes"), label: "Minutes", icon: FileText },
-  ];
-
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs font-bold text-accent uppercase tracking-wider">
-          {committee.charterLetter}) Committee
-        </p>
-        <h1 className="text-2xl font-bold text-charcoal mt-1">{committee.name}</h1>
-        {meta && (
-          <p className="text-sm text-muted mt-1">
-            {meta.reportingFrequency && `${meta.reportingFrequency} reporting`}
-            {budgetsEnabled &&
-              meta.budget != null &&
-              ` · Budget $${meta.budget.toLocaleString()}`}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold text-accent uppercase tracking-wider">
+            {committee.charterLetter}) Committee
           </p>
-        )}
-        {meta?.description && (
-          <p className="text-sm text-muted mt-2">{meta.description}</p>
-        )}
+          <h1 className="text-xl font-bold text-charcoal mt-0.5">{committee.name}</h1>
+          {meta && (
+            <p className="text-xs text-muted mt-0.5">
+              {meta.reportingFrequency && `${meta.reportingFrequency} reporting`}
+              {budgetsEnabled &&
+                meta.budget != null &&
+                ` · Budget $${meta.budget.toLocaleString()}`}
+            </p>
+          )}
+          {meta?.description && (
+            <p className="text-sm text-muted mt-1 line-clamp-2">{meta.description}</p>
+          )}
+        </div>
         {canInvite && (
-          <div className="mt-4">
-            <TouchButton onClick={() => setInviteOpen(true)}>Invite member</TouchButton>
-          </div>
+          <TouchButton onClick={() => setInviteOpen(true)}>Invite member</TouchButton>
         )}
       </div>
+
+      <CommitteeWorkspaceTabs />
 
       <InviteMemberSheet
         open={inviteOpen}
@@ -210,27 +199,27 @@ export function CommitteeDashboardView() {
       />
 
       {canInbox && pendingInbox.length > 0 && (
-        <section className="rounded-2xl border border-accent/30 bg-accent/5 p-4 space-y-3">
+        <section className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+            <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
               Pending assignments ({pendingAssignments})
             </h2>
             <Link
               href={committeePath(committeeId, "assignments")}
-              className="text-sm font-semibold text-accent hover:underline"
+              className="text-xs font-semibold text-accent hover:underline"
             >
               Open inbox →
             </Link>
           </div>
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {pendingInbox.map((a) => (
               <li key={a.id}>
                 <Link
-                  href={`/assignments/${a.id}?action=accept`}
-                  className="flex items-center justify-between gap-3 rounded-xl bg-white border border-charcoal/10 px-4 py-3 touch-target-lg hover:border-primary/40"
+                  href={`/assignments/${a.id}?action=receive`}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-white border border-charcoal/10 px-3 py-2 hover:border-primary/40"
                 >
-                  <span className="font-semibold text-charcoal truncate">{a.title}</span>
-                  <span className="text-xs text-muted shrink-0">From {a.createdBy.name}</span>
+                  <span className="text-sm font-semibold text-charcoal truncate">{a.title}</span>
+                  <span className="text-[11px] text-muted shrink-0">From {a.createdBy.name}</span>
                 </Link>
               </li>
             ))}
@@ -239,23 +228,23 @@ export function CommitteeDashboardView() {
       )}
 
       {myOpenTaskList.length > 0 && (
-        <section className="rounded-2xl border border-charcoal/10 bg-white p-4 space-y-3">
+        <section className="rounded-xl border border-charcoal/10 bg-white px-3 py-2.5 space-y-1.5">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+            <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
               My open tasks ({myOpenTasks})
             </h2>
             <Link
               href={`${committeePath(committeeId, "tasks")}?filter=mine`}
-              className="text-sm font-semibold text-accent hover:underline"
+              className="text-xs font-semibold text-accent hover:underline"
             >
               View board →
             </Link>
           </div>
-          <ul className="space-y-2">
+          <ul className="divide-y divide-charcoal/5">
             {myOpenTaskList.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 px-1 py-1">
-                <span className="text-sm font-semibold text-charcoal truncate">{t.title}</span>
-                <span className="text-xs text-muted capitalize shrink-0">
+              <li key={t.id} className="flex items-center justify-between gap-3 py-1.5">
+                <span className="text-sm font-medium text-charcoal truncate">{t.title}</span>
+                <span className="text-[11px] text-muted capitalize shrink-0">
                   {t.status.replace(/_/g, " ").toLowerCase()}
                 </span>
               </li>
@@ -264,97 +253,84 @@ export function CommitteeDashboardView() {
         </section>
       )}
 
-      <DashboardStatsPanel
-        attention={kpiSections.attention}
-        snapshot={kpiSections.snapshot}
-        attentionTitle="Needs your attention"
-        snapshotTitle="Committee snapshot"
-      />
+      <DashboardStatGrid stats={kpiSections.snapshot} />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {shortcuts.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="relative flex flex-col items-center gap-2.5 p-5 rounded-2xl bg-white border border-charcoal/5 shadow-xs hover:border-primary/50 hover:shadow-sm touch-target-lg transition-all"
-          >
-            <Icon className="h-6 w-6 text-accent" />
-            <span className="text-sm font-semibold text-charcoal">{label}</span>
-            {label === "Inbox" && pendingAssignments > 0 && (
-              <span className="absolute top-2 right-2 min-w-5 h-5 px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
-                {pendingAssignments > 9 ? "9+" : pendingAssignments}
-              </span>
-            )}
-          </Link>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Link
-          href={suggestionsPath(committeeId)}
-          className="touch-target inline-flex items-center justify-center gap-2 transition-all active:scale-[0.98] bg-primary text-white font-semibold hover:bg-primary-dark min-h-14 px-6 py-4 text-lg rounded-2xl w-full text-sm sm:text-base"
-        >
-          <MessageSquarePlus className="h-5 w-5 shrink-0" />
-          Suggestions
-        </Link>
-        {canReview && (
-          <FeedbackReviewSheet
-            committeeId={committeeId}
-            triggerClassName="w-full"
-          />
-        )}
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <section className="space-y-4">
-          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
-            Progress
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <section className="space-y-2 min-w-0">
+          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
+            Committee Alerts
           </h2>
-          {stats && (
-            <div className="bg-white rounded-2xl border border-charcoal/5 p-5 shadow-xs">
-              <HealthRing
-                label={committee.name}
-                completed={stats.done}
-                total={stats.total}
-                blocked={stats.blocked}
-              />
-            </div>
-          )}
+          <AlertFeed alerts={alerts} />
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+        <section className="space-y-2 min-w-0">
+          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
             Recent Tasks
           </h2>
-          <div className="bg-white rounded-2xl border border-charcoal/5 overflow-hidden shadow-xs">
+          <div className="bg-white rounded-xl border border-charcoal/5 overflow-hidden shadow-xs">
             <ul className="divide-y divide-charcoal/5">
               {tasks.map((t) => (
-                <li key={t.id} className="px-5 py-4 hover:bg-slate-50 transition-colors">
-                  <p className="text-sm font-semibold text-charcoal">{t.title}</p>
-                  <p className="text-xs text-muted font-medium capitalize mt-1">
+                <li key={t.id} className="px-3 py-2 hover:bg-slate-50 transition-colors">
+                  <p className="text-sm font-medium text-charcoal leading-snug">{t.title}</p>
+                  <p className="text-[11px] text-muted font-medium capitalize">
                     {t.status.replace(/_/g, " ").toLowerCase()}
                   </p>
                 </li>
               ))}
               {tasks.length === 0 && (
-                <li className="px-5 py-8 text-center text-muted text-sm font-medium">No tasks yet.</li>
+                <li className="px-3 py-5 text-center text-muted text-sm font-medium">
+                  No tasks yet.
+                </li>
               )}
             </ul>
           </div>
           <Link
             href={committeePath(committeeId, "tasks")}
-            className="inline-flex items-center text-sm font-semibold text-accent hover:underline mt-1"
+            className="inline-flex items-center text-xs font-semibold text-accent hover:underline"
           >
             View all tasks →
           </Link>
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
-            Committee Alerts
-          </h2>
-          <AlertFeed alerts={alerts} />
-        </section>
+        <div className="space-y-3 md:col-span-2 lg:col-span-1">
+          <section className="space-y-2">
+            <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
+              Progress
+            </h2>
+            {stats && (
+              <div className="bg-white rounded-xl border border-charcoal/5 px-3 py-3 shadow-xs">
+                <HealthRing
+                  label={committee.name}
+                  completed={stats.done}
+                  total={stats.total}
+                  blocked={stats.blocked}
+                />
+              </div>
+            )}
+          </section>
+
+          <section
+            className={`rounded-xl border px-3 py-3 ${
+              attentionTotal > 0
+                ? "border-accent/30 bg-accent/5"
+                : "border-primary/25 bg-primary/5"
+            }`}
+          >
+            {attentionTotal > 0 ? (
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-accent">
+                  Needs your attention
+                </p>
+                <DashboardStatGrid stats={kpiSections.attention} size="compact" />
+              </div>
+            ) : (
+              <p className="text-sm text-muted leading-snug">
+                Nothing needs your sign-off right now. Check the snapshot above for
+                committee progress.
+              </p>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

@@ -23,23 +23,23 @@ type Props = {
 export function AlertFeed({ alerts, onAlertClick }: Props) {
   if (alerts.length === 0) {
     return (
-      <div className="p-6 text-center text-muted bg-white rounded-2xl border border-charcoal/10">
+      <div className="px-3 py-4 text-center text-sm text-muted bg-white rounded-xl border border-charcoal/10">
         No alerts right now. All committees are on track.
       </div>
     );
   }
 
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-1.5">
       {alerts.map((alert) => {
         const content = (
           <>
-            <p className="text-sm font-medium text-charcoal">{alert.message}</p>
-            <time className="text-xs text-muted mt-1 block">{alert.time}</time>
+            <p className="text-sm font-medium text-charcoal leading-snug">{alert.message}</p>
+            <time className="text-[11px] text-muted mt-0.5 block">{alert.time}</time>
           </>
         );
 
-        const className = `block w-full p-4 rounded-xl border-l-4 bg-white border border-charcoal/10 text-left touch-target ${TYPE_STYLES[alert.type]}`;
+        const className = `block w-full px-3 py-2 rounded-lg border-l-4 bg-white border border-charcoal/10 text-left ${TYPE_STYLES[alert.type]}`;
 
         if (alert.href) {
           return (

@@ -3,7 +3,7 @@ import { requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
-  const auth = await requireRoles(["SUPER_ADMIN", "SYSTEM_ADMIN"]);
+  const auth = await requireRoles(["ORG_ADMIN", "ORG_TECH"]);
   if (auth.error) return auth.error;
 
   const { searchParams } = new URL(request.url);

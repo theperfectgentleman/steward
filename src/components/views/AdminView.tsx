@@ -38,7 +38,7 @@ export function AdminView() {
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedCommittees, setSelectedCommittees] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState<"CHAIR" | "SECRETARY" | "MEMBER">("MEMBER");
-  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "COMMITTEE_PARTICIPANT" as UserRole });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "ORG_PARTICIPANT" as UserRole });
   const [presbytery, setPresbytery] = useState<{ members: { id: string; isHead: boolean; user: User }[] } | null>(null);
   const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; createdAt: string; actor: { name: string } }[]>([]);
   const [saving, setSaving] = useState(false);
@@ -73,7 +73,7 @@ export function AdminView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      setForm({ name: "", email: "", phone: "", role: "COMMITTEE_PARTICIPANT" });
+      setForm({ name: "", email: "", phone: "", role: "ORG_PARTICIPANT" });
       refresh();
     } finally {
       setSaving(false);
@@ -162,14 +162,36 @@ export function AdminView() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-extrabold text-charcoal tracking-tight">Admin</h1>
-        <p className="text-muted mt-0.5 text-sm font-medium">User directory, pairing, presbytery roster & committee config</p>
+        <h1 className="text-xl font-extrabold text-charcoal tracking-tight">Admin</h1>
+        <p className="text-muted mt-0.5 text-sm font-medium">
+          Users, structure, RBAC, supervisory roster & committee config
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/admin/structure"
+            className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold"
+          >
+            Structure builder
+          </a>
+          <a
+            href="/admin/rbac"
+            className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold"
+          >
+            RBAC & policies
+          </a>
+          <a
+            href="/reports"
+            className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold"
+          >
+            Reports
+          </a>
+        </div>
       </div>
 
       {canToggleBudgets && (
-        <section className="rounded-2xl border border-charcoal/10 bg-white p-5 shadow-xs">
+        <section className="rounded-xl border border-charcoal/10 bg-white p-4 shadow-xs">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-sm font-bold text-charcoal uppercase tracking-wider text-accent">
@@ -232,7 +254,7 @@ export function AdminView() {
         </ul>
       </section>
 
-      <section className="bg-white rounded-2xl border border-charcoal/5 p-6 space-y-4 shadow-xs">
+      <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
         <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Presbytery Roster</h2>
         <ul className="space-y-2">
           {(presbytery?.members ?? []).map((m) => (
@@ -297,7 +319,7 @@ export function AdminView() {
         </FormSelect>
       </section>
 
-      <section className="bg-white rounded-2xl border border-charcoal/5 p-6 space-y-3 shadow-xs">
+      <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
         <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Audit Log</h2>
         {auditLogs.length === 0 ? (
           <p className="text-sm text-muted">No activity logged yet.</p>
@@ -315,10 +337,10 @@ export function AdminView() {
         )}
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2 items-start">
+      <div className="grid gap-4 lg:grid-cols-2 items-start">
         {/* Left Column: Create User and Assign Committee */}
-        <div className="space-y-6">
-          <section className="bg-white rounded-2xl border border-charcoal/5 p-6 space-y-4 shadow-xs">
+        <div className="space-y-4">
+          <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
             <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Create New User</h2>
             <div className="space-y-3">
               {(["name", "email", "phone"] as const).map((field) => (
@@ -347,7 +369,7 @@ export function AdminView() {
             </div>
           </section>
 
-          <section className="bg-white rounded-2xl border border-charcoal/5 p-6 space-y-4 shadow-xs">
+          <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
             <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Assign Committee</h2>
             <FormSelect
               value={selectedUser ?? ""}
@@ -384,7 +406,7 @@ export function AdminView() {
                       <button
                         type="button"
                         onClick={() => toggleCommittee(c.id)}
-                        className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left cursor-pointer ${
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left cursor-pointer ${
                           selected
                             ? "border-primary bg-primary/10 shadow-2xs font-bold text-charcoal"
                             : "border-charcoal/5 bg-white hover:border-charcoal/20 text-charcoal-muted"
@@ -414,8 +436,8 @@ export function AdminView() {
         </div>
 
         {/* Right Column: Committee Configuration */}
-        <div className="space-y-6">
-          <section className="bg-white rounded-2xl border border-charcoal/5 p-6 space-y-4 shadow-xs">
+        <div className="space-y-4">
+          <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
             <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Committee Configuration</h2>
             <p className="text-xs text-muted font-medium">
               Set reporting frequencies{budgetsEnabled ? " and budgets" : ""} for
@@ -491,7 +513,7 @@ export function AdminView() {
                     <button
                       type="button"
                       onClick={() => openMetaEditor(c)}
-                      className="w-full flex items-center gap-4 p-4 rounded-xl border border-charcoal/5 bg-white hover:border-accent hover:shadow-2xs transition-all text-left cursor-pointer"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-charcoal/5 bg-white hover:border-accent hover:shadow-2xs transition-all text-left cursor-pointer"
                     >
                       <span className="font-extrabold text-accent uppercase w-6 shrink-0 text-center bg-accent/5 rounded-lg py-1">
                         {c.charterLetter}

@@ -1,38 +1,30 @@
 import { NextResponse } from "next/server";
-import { requireRoles, requireUser } from "@/lib/auth";
-import { getAppSettings, updateAppSettings } from "@/lib/settings";
+import { requireActiveOrg, requireRoles } from "@/lib/auth";
+import { getOrgSettings, updateOrgSettings } from "@/lib/settings";
 
 export async function GET() {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
-  const settings = await getAppSettings();
+  const settings = await getOrgSettings(auth.org.organizationId);
   return NextResponse.json(settings);
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireRoles(["SUPER_ADMIN"]);
+  const auth = await requireRoles(["ORG_ADMIN"]);
   if (auth.error) return auth.error;
+  const orgId = auth.user.orgContext!.organizationId;
 
-  const body = (await request.json()) as {
-    committeeBudgetsEnabled?: boolean;
-  };
+  const body = (await request.json()) as Partial<{
+    committeeBudgetsEnabled: boolean;
+    allowCrossCommitteeRead: boolean;
+    requireOversightOnSelfInitiated: boolean;
+    allowSupervisoryAssignMembers: boolean;
+    supervisoryLabel: string;
+    committeeLabel: string;
+    approvalStack: import("@/lib/types").ApprovalStackStep[];
+  }>;
 
-  if (
-    body.committeeBudgetsEnabled !== undefined &&
-    typeof body.committeeBudgetsEnabled !== "boolean"
-  ) {
-    return NextResponse.json(
-      { error: "committeeBudgetsEnabled must be a boolean" },
-      { status: 400 },
-    );
-  }
-
-  const settings = await updateAppSettings({
-    ...(body.committeeBudgetsEnabled !== undefined && {
-      committeeBudgetsEnabled: body.committeeBudgetsEnabled,
-    }),
-  });
-
+  const settings = await updateOrgSettings(orgId, body);
   return NextResponse.json(settings);
 }

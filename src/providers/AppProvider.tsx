@@ -8,31 +8,77 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { AppSettings, CommitteeTitle, UserRole } from "@/lib/types";
+import type {
+  CommitteeTitle,
+  OrganizationMemberRole,
+  OrganizationSettings,
+  UserRole,
+} from "@/lib/types";
+import { filterDismissedAttention } from "@/lib/attention-dismiss";
+
+export type OrgMembershipCard = {
+  organizationId: string;
+  name: string;
+  slug?: string;
+  status: "ACTIVE" | "SUSPENDED";
+  orgRole: OrganizationMemberRole;
+  rolesSummary: string[];
+  roleCount?: number;
+  groupCount?: number;
+  supervisoryLabel?: string;
+  committeeLabel?: string;
+};
 
 export type SessionUser = {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  isPlatformAdmin?: boolean;
+  activeOrganizationId?: string | null;
+  organization?: {
+    id: string;
+    name: string;
+    status: "ACTIVE" | "SUSPENDED";
+    orgRole: OrganizationMemberRole;
+    settings: OrganizationSettings;
+  } | null;
+  memberships?: OrgMembershipCard[];
   committeeIds: string[];
-  committeeMemberships: { committeeId: string; title: CommitteeTitle }[];
-  presbyteryMembership: { isHead: boolean } | null;
+  committeeMemberships: {
+    committeeId: string;
+    title: CommitteeTitle;
+    customTitle?: string | null;
+  }[];
+  supervisoryMembership: {
+    isHead: boolean;
+    title?: string;
+    customTitle?: string | null;
+  } | null;
+  /** @deprecated */
+  presbyteryMembership?: {
+    isHead: boolean;
+    title?: string;
+    customTitle?: string | null;
+  } | null;
 };
 
 type AppContextValue = {
   user: SessionUser | null;
   activeCommitteeId: string | null;
   attentionCount: number;
-  appSettings: AppSettings | null;
+  appSettings: OrganizationSettings | null;
   setAttentionCount: (n: number) => void;
   setActiveCommitteeId: (id: string) => void;
   login: (identifier: string, password: string) => Promise<void>;
   establishSession: (user: SessionUser) => void;
+  enterOrganization: (organizationId: string) => Promise<void>;
+  leaveOrganization: () => Promise<void>;
   logout: () => void;
   loading: boolean;
   refreshAttention: () => void;
   refreshAppSettings: () => void;
+  refreshSession: () => Promise<void>;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -46,9 +92,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     null,
   );
   const [attentionCount, setAttentionCount] = useState(0);
-  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  // Always true on server and first client render to avoid hydration mismatch.
-  // Session is restored from the httpOnly cookie in useEffect below.
+  const [appSettings, setAppSettings] = useState<OrganizationSettings | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
 
   const setActiveCommitteeId = useCallback((id: string) => {
@@ -59,7 +105,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshAppSettings = useCallback(() => {
     fetch("/api/settings")
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: AppSettings | null) => {
+      .then((data: OrganizationSettings | null) => {
         if (data) setAppSettings(data);
       })
       .catch(() => undefined);
@@ -69,32 +115,97 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fetch("/api/attention")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.nowCount != null) setAttentionCount(data.nowCount);
+        if (!data) return;
+        const items = filterDismissedAttention(data.items ?? []);
+        const nowCount = items.filter((i) => i.urgency === "NOW").length;
+        setAttentionCount(nowCount);
       })
       .catch(() => undefined);
   }, []);
 
-  const establishSession = useCallback((data: SessionUser) => {
-    setUser(data);
-    localStorage.setItem(SESSION_KEY, data.id);
-    if (data.committeeIds.length > 0) {
-      setActiveCommitteeId(data.committeeIds[0]);
-    }
-  }, [setActiveCommitteeId]);
+  const applySession = useCallback(
+    (data: SessionUser) => {
+      setUser({
+        ...data,
+        supervisoryMembership:
+          data.supervisoryMembership ?? data.presbyteryMembership ?? null,
+      });
+      localStorage.setItem(SESSION_KEY, data.id);
+      if (data.activeOrganizationId && data.committeeIds.length > 0) {
+        const stored = localStorage.getItem(COMMITTEE_KEY);
+        if (stored && data.committeeIds.includes(stored)) {
+          setActiveCommitteeIdState(stored);
+        } else {
+          setActiveCommitteeId(data.committeeIds[0]);
+        }
+      } else {
+        setActiveCommitteeIdState(null);
+      }
+      if (data.organization?.settings) {
+        setAppSettings(data.organization.settings);
+      }
+    },
+    [setActiveCommitteeId],
+  );
 
-  const login = useCallback(async (identifier: string, password: string) => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier, password }),
-    });
+  const establishSession = useCallback(
+    (data: SessionUser) => {
+      applySession(data);
+    },
+    [applySession],
+  );
+
+  const refreshSession = useCallback(async () => {
+    const res = await fetch("/api/auth/session");
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error ?? "Login failed");
+      setUser(null);
+      return;
     }
     const data = (await res.json()) as SessionUser;
-    establishSession(data);
-  }, [establishSession]);
+    applySession(data);
+  }, [applySession]);
+
+  const login = useCallback(
+    async (identifier: string, password: string) => {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier, password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Login failed");
+      }
+      const data = (await res.json()) as SessionUser;
+      applySession(data);
+    },
+    [applySession],
+  );
+
+  const enterOrganization = useCallback(
+    async (organizationId: string) => {
+      const res = await fetch("/api/orgs/active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not enter organization");
+      }
+      await refreshSession();
+    },
+    [refreshSession],
+  );
+
+  const leaveOrganization = useCallback(async () => {
+    await fetch("/api/orgs/active", { method: "DELETE" });
+    setAppSettings(null);
+    setAttentionCount(0);
+    setActiveCommitteeIdState(null);
+    localStorage.removeItem(COMMITTEE_KEY);
+    await refreshSession();
+  }, [refreshSession]);
 
   const logout = useCallback(() => {
     setUser(null);
@@ -108,31 +219,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const storedCommittee = localStorage.getItem(COMMITTEE_KEY);
-
     fetch("/api/auth/session")
       .then((res) => (res.ok ? res.json() : null))
       .then((data: SessionUser | null) => {
-        if (data) {
-          setUser(data);
-          localStorage.setItem(SESSION_KEY, data.id);
-          if (storedCommittee && data.committeeIds.includes(storedCommittee)) {
-            setActiveCommitteeIdState(storedCommittee);
-          } else if (data.committeeIds.length > 0) {
-            setActiveCommitteeIdState(data.committeeIds[0]);
-          }
-        } else {
-          localStorage.removeItem(SESSION_KEY);
-        }
+        if (data) applySession(data);
+        else localStorage.removeItem(SESSION_KEY);
       })
-      .catch(() => {
-        localStorage.removeItem(SESSION_KEY);
-      })
+      .catch(() => localStorage.removeItem(SESSION_KEY))
       .finally(() => setLoading(false));
-  }, []);
+  }, [applySession]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.activeOrganizationId) return;
     refreshAttention();
     refreshAppSettings();
     const interval = setInterval(refreshAttention, 60_000);
@@ -142,7 +240,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
       window.removeEventListener("focus", onFocus);
     };
-  }, [user, refreshAttention, refreshAppSettings]);
+  }, [user?.activeOrganizationId, refreshAttention, refreshAppSettings]);
 
   const value = useMemo(
     () => ({
@@ -154,10 +252,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActiveCommitteeId,
       login,
       establishSession,
+      enterOrganization,
+      leaveOrganization,
       logout,
       loading,
       refreshAttention,
       refreshAppSettings,
+      refreshSession,
     }),
     [
       user,
@@ -167,10 +268,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActiveCommitteeId,
       login,
       establishSession,
+      enterOrganization,
+      leaveOrganization,
       logout,
       loading,
       refreshAttention,
       refreshAppSettings,
+      refreshSession,
     ],
   );
 

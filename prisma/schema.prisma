@@ -8,16 +8,28 @@ datasource db {
 }
 
 enum UserRole {
-  SUPER_ADMIN
-  SYSTEM_ADMIN
-  CHURCH_EXECUTIVE
-  COMMITTEE_PARTICIPANT
+  ORG_ADMIN
+  ORG_TECH
+  ORG_PARTICIPANT
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum OrganizationMemberRole {
+  ORG_ADMIN
+  ORG_TECH
+  ORG_PARTICIPANT
 }
 
 enum CommitteeTitle {
   CHAIR
   SECRETARY
   MEMBER
+  DEPUTY
+  CUSTOM
 }
 
 enum TaskStatus {
@@ -34,7 +46,7 @@ enum ProjectStatus {
 }
 
 enum AssignmentSource {
-  PRESBYTERY
+  SUPERVISORY
   COMMITTEE_REFERRAL
 }
 
@@ -60,6 +72,33 @@ enum EntityType {
   ASSIGNMENT
   PROJECT
   TASK
+  REPORT
+  LIBRARY_DOCUMENT
+  DOCUMENT
+}
+
+enum SupervisoryTitle {
+  HEAD
+  SECRETARY
+  MEMBER
+  CUSTOM
+}
+
+enum ScheduleKind {
+  MEETING
+  EVENT
+}
+
+enum ScheduleFormat {
+  IN_PERSON
+  VIRTUAL
+  HYBRID
+}
+
+enum MessageThreadKind {
+  DIRECT
+  COMMITTEE
+  GROUP
 }
 
 enum AttendanceStatus {
@@ -121,68 +160,179 @@ enum OtpPurpose {
   LOGIN_RESET
 }
 
-model User {
-  id               String     @id @default(cuid())
-  name             String
-  email            String     @unique
-  phone            String?
-  passwordHash     String?
-  status           UserStatus @default(PENDING)
-  emailVerifiedAt  DateTime?
-  phoneVerifiedAt  DateTime?
-  role             UserRole   @default(COMMITTEE_PARTICIPANT)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-
-  committeeMemberships CommitteeMember[]
-  presbyteryMembership PresbyteryMember?
-  assignedTasks        Task[]              @relation("AssignedTasks")
-  createdTasks         Task[]              @relation("CreatedTasks")
-  createdProjects      Project[]           @relation("CreatedProjects")
-  createdAssignments   Assignment[]        @relation("CreatedAssignments")
-  rsvps                EventRsvp[]
-  attendances          Attendance[]
-  createdMeetings      Meeting[]
-  feedback             CommitteeFeedback[]
-  eventDeliverables    EventDeliverable[]
-  comments             Comment[]
-  documents            Document[]
-  libraryDocuments     LibraryDocument[]
-  activityLogs         ActivityLog[]
-  invitesCreated       Invite[]            @relation("InvitesCreated")
-  invitesReceived      Invite[]            @relation("InvitesReceived")
-  otpChallenges        OtpChallenge[]
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  RETURNED
+  FINAL
 }
 
-model PresbyteryGroup {
+enum InviteTargetType {
+  COMMITTEE
+  SUPERVISORY
+  ORG_ADMIN
+}
+
+model Organization {
   id        String             @id @default(cuid())
-  name      String             @default("Presbytery")
+  name      String
+  slug      String             @unique
+  status    OrganizationStatus @default(ACTIVE)
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
-  members   PresbyteryMember[]
+
+  settings           OrganizationSettings?
+  memberships        OrganizationMembership[]
+  supervisoryGroups  SupervisoryGroup[]
+  committees         Committee[]
+  roleTemplates      RoleTemplate[]
+  invites            Invite[]
+  libraryDocuments   LibraryDocument[]
+  reports            Report[]
+  messageThreads     MessageThread[]
+  events             Event[]
 }
 
-model PresbyteryMember {
-  id        String          @id @default(cuid())
-  userId    String          @unique
-  groupId   String
-  isHead    Boolean         @default(false)
-  createdAt DateTime        @default(now())
+model OrganizationSettings {
+  id                              String @id @default(cuid())
+  organizationId                  String @unique
+  supervisoryLabel                String @default("Supervisory Group")
+  committeeLabel                  String @default("Committee")
+  committeeBudgetsEnabled         Boolean @default(false)
+  allowCrossCommitteeRead         Boolean @default(false)
+  requireOversightOnSelfInitiated Boolean @default(true)
+  allowSupervisoryAssignMembers   Boolean @default(true)
+  /// Ordered approval steps: [{ order, role, titleKey?, label }]
+  approvalStack                   Json    @default("[]")
 
-  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group PresbyteryGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  updatedAt    DateTime     @updatedAt
+}
+
+model OrganizationMembership {
+  id             String                 @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrganizationMemberRole @default(ORG_PARTICIPANT)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model PlatformAdmin {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RoleTemplate {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  key            String
+  description    String?
+  capabilities   Json   @default("{}")
+  sortOrder      Int    @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+}
+
+model User {
+  id              String     @id @default(cuid())
+  name            String
+  email           String     @unique
+  phone           String?
+  passwordHash    String?
+  status          UserStatus @default(PENDING)
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  /// Legacy/global hint; authoritative org role is OrganizationMembership.role
+  role            UserRole   @default(ORG_PARTICIPANT)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  organizationMemberships OrganizationMembership[]
+  platformAdmin           PlatformAdmin?
+  committeeMemberships    CommitteeMember[]
+  supervisoryMemberships  SupervisoryMember[]
+  assignedTasks           Task[]                   @relation("AssignedTasks")
+  createdTasks            Task[]                   @relation("CreatedTasks")
+  createdProjects         Project[]                @relation("CreatedProjects")
+  createdAssignments      Assignment[]             @relation("CreatedAssignments")
+  rsvps                   EventRsvp[]
+  attendances             Attendance[]
+  createdMeetings         Meeting[]
+  feedback                CommitteeFeedback[]
+  eventDeliverables       EventDeliverable[]
+  comments                Comment[]
+  documents               Document[]
+  libraryDocuments        LibraryDocument[]
+  activityLogs            ActivityLog[]
+  invitesCreated          Invite[]                 @relation("InvitesCreated")
+  invitesReceived         Invite[]                 @relation("InvitesReceived")
+  otpChallenges           OtpChallenge[]
+  authoredReports         Report[]                 @relation("ReportAuthor")
+  reviewedReports         Report[]                 @relation("ReportReviewer")
+  assignedAssignments     Assignment[]             @relation("AssignmentAssignee")
+  accountableAssignments  Assignment[]             @relation("AssignmentAccountable")
+  messageParticipations   MessageParticipant[]
+  messagesSent            Message[]                @relation("MessageSender")
+}
+
+model SupervisoryGroup {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   @default("Supervisory Group")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      SupervisoryMember[]
+
+  @@index([organizationId])
+}
+
+model SupervisoryMember {
+  id                  String           @id @default(cuid())
+  userId              String
+  groupId             String
+  isHead              Boolean          @default(false)
+  title               SupervisoryTitle @default(MEMBER)
+  customTitle         String?
+  roleTemplateKey     String?
+  canViewAll          Boolean          @default(false)
+  canApproveOptional  Boolean          @default(false)
+  createdAt           DateTime         @default(now())
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group SupervisoryGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([groupId])
 }
 
 model Committee {
   id                 String   @id @default(cuid())
-  charterLetter      String   @unique
+  organizationId     String
+  charterLetter      String?
   name               String
   description        String?
   budget             Float?
   reportingFrequency String?
+  sortOrder          Int      @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   members            CommitteeMember[]
   invites            Invite[]
   tasks              Task[]
@@ -194,6 +344,10 @@ model Committee {
   targetAssignments  Assignment[]        @relation("TargetAssignments")
   sourceAssignments  Assignment[]        @relation("SourceAssignments")
   libraryDocuments   LibraryDocument[]
+  messageThreads     MessageThread[]
+
+  @@unique([organizationId, charterLetter])
+  @@index([organizationId])
 }
 
 model CommitteeMember {
@@ -201,6 +355,7 @@ model CommitteeMember {
   userId      String
   committeeId String
   title       CommitteeTitle @default(MEMBER)
+  customTitle String?
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
@@ -209,22 +364,28 @@ model CommitteeMember {
 }
 
 model Invite {
-  id          String         @id @default(cuid())
-  token       String         @unique
-  userId      String
-  committeeId String
-  title       CommitteeTitle @default(MEMBER)
-  createdById String
-  expiresAt   DateTime
-  acceptedAt  DateTime?
-  revokedAt   DateTime?
-  createdAt   DateTime       @default(now())
+  id             String           @id @default(cuid())
+  token          String           @unique
+  organizationId String
+  userId         String
+  targetType     InviteTargetType @default(COMMITTEE)
+  committeeId    String?
+  title          CommitteeTitle   @default(MEMBER)
+  customTitle    String?
+  isSupervisoryHead Boolean       @default(false)
+  createdById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime         @default(now())
 
-  user      User      @relation("InvitesReceived", fields: [userId], references: [id], onDelete: Cascade)
-  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  createdBy User      @relation("InvitesCreated", fields: [createdById], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("InvitesReceived", fields: [userId], references: [id], onDelete: Cascade)
+  committee    Committee?   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("InvitesCreated", fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([userId, committeeId])
+  @@index([organizationId])
   @@index([expiresAt])
 }
 
@@ -251,7 +412,7 @@ model Project {
   description  String?
   status       ProjectStatus @default(ACTIVE)
   committeeId  String
-  assignmentId String?       @unique
+  assignmentId String?
   createdById  String
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -260,58 +421,97 @@ model Project {
   assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
   createdBy  User        @relation("CreatedProjects", fields: [createdById], references: [id])
   tasks      Task[]
+  reports    Report[]
+
+  @@index([assignmentId])
+}
+
+model Report {
+  id             String       @id @default(cuid())
+  organizationId String
+  projectId      String
+  title          String
+  body           String?
+  status         ReportStatus @default(DRAFT)
+  authorId       String
+  reviewedById   String?
+  reviewComment  String?
+  submittedAt    DateTime?
+  finalizedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author       User         @relation("ReportAuthor", fields: [authorId], references: [id])
+  reviewedBy   User?        @relation("ReportReviewer", fields: [reviewedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([projectId, status])
 }
 
 model Assignment {
-  id                  String             @id @default(cuid())
-  title               String
-  description         String?
-  source              AssignmentSource
-  status              AssignmentStatus   @default(DRAFT)
-  priority            AssignmentPriority @default(NORMAL)
-  createdById         String
-  targetCommitteeId   String
-  sourceCommitteeId   String?
-  parentAssignmentId  String?
-  rootTaskId          String?            @unique
-  dueDate             DateTime?
-  returnComment       String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  id                 String             @id @default(cuid())
+  title              String
+  description        String?
+  source             AssignmentSource
+  status             AssignmentStatus   @default(DRAFT)
+  priority           AssignmentPriority @default(NORMAL)
+  createdById        String
+  targetCommitteeId  String?
+  assigneeUserId     String?
+  accountableOwnerId String?
+  sourceCommitteeId  String?
+  parentAssignmentId String?
+  rootTaskId         String?            @unique
+  dueDate            DateTime?
+  returnComment      String?
+  approvalStepIndex  Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  createdBy        User       @relation("CreatedAssignments", fields: [createdById], references: [id])
-  targetCommittee  Committee  @relation("TargetAssignments", fields: [targetCommitteeId], references: [id], onDelete: Cascade)
-  sourceCommittee  Committee? @relation("SourceAssignments", fields: [sourceCommitteeId], references: [id], onDelete: SetNull)
-  parentAssignment Assignment?  @relation("ReferralChain", fields: [parentAssignmentId], references: [id], onDelete: SetNull)
-  childAssignments Assignment[] @relation("ReferralChain")
-  rootTask         Task?        @relation("AssignmentRootTask", fields: [rootTaskId], references: [id], onDelete: SetNull)
-  project          Project?
+  createdBy         User         @relation("CreatedAssignments", fields: [createdById], references: [id])
+  targetCommittee   Committee?   @relation("TargetAssignments", fields: [targetCommitteeId], references: [id], onDelete: Cascade)
+  assignee          User?        @relation("AssignmentAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  accountableOwner  User?        @relation("AssignmentAccountable", fields: [accountableOwnerId], references: [id], onDelete: SetNull)
+  sourceCommittee   Committee?   @relation("SourceAssignments", fields: [sourceCommitteeId], references: [id], onDelete: SetNull)
+  parentAssignment  Assignment?  @relation("ReferralChain", fields: [parentAssignmentId], references: [id], onDelete: SetNull)
+  childAssignments  Assignment[] @relation("ReferralChain")
+  rootTask          Task?        @relation("AssignmentRootTask", fields: [rootTaskId], references: [id], onDelete: SetNull)
+  projects          Project[]
+  agendaItems       AgendaItem[]
 
   @@index([targetCommitteeId, status])
+  @@index([assigneeUserId, status])
+  @@index([accountableOwnerId, status])
   @@index([createdById, status])
   @@index([status, dueDate])
 }
 
 model Task {
-  id           String     @id @default(cuid())
-  title        String
-  description  String?
-  status       TaskStatus @default(TODO)
-  dueDate      DateTime?
-  committeeId  String
-  projectId    String?
-  eventId      String?
-  parentId     String?
-  assignedToId String?
-  createdById  String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id             String     @id @default(cuid())
+  title          String
+  description    String?
+  status         TaskStatus @default(TODO)
+  dueDate        DateTime?
+  estimatedDays  Float?
+  committeeId    String
+  projectId      String?
+  eventId        String?
+  parentId       String?
+  dependsOnTaskId String?
+  assignedToId   String?
+  createdById    String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   committee        Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
   project          Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
   event            Event?      @relation(fields: [eventId], references: [id], onDelete: Cascade)
   parent           Task?       @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
   subtasks         Task[]      @relation("TaskSubtasks")
+  dependsOn        Task?       @relation("TaskDependencies", fields: [dependsOnTaskId], references: [id], onDelete: SetNull)
+  dependents       Task[]      @relation("TaskDependencies")
   assignedTo       User?       @relation("AssignedTasks", fields: [assignedToId], references: [id])
   createdBy        User?       @relation("CreatedTasks", fields: [createdById], references: [id])
   assignmentAsRoot Assignment? @relation("AssignmentRootTask")
@@ -319,6 +519,7 @@ model Task {
   @@index([eventId])
   @@index([parentId])
   @@index([projectId])
+  @@index([dependsOnTaskId])
   @@index([committeeId, assignedToId, status])
 }
 
@@ -351,22 +552,25 @@ model Document {
 }
 
 model LibraryDocument {
-  id           String             @id @default(cuid())
-  title        String
-  tag          LibraryDocumentTag @default(OTHER)
-  source       DocumentSource     @default(CREATED)
-  body         String?
-  fileName     String?
-  fileUrl      String?
-  mimeType     String?
-  committeeId  String?
-  uploadedById String
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id             String             @id @default(cuid())
+  organizationId String?
+  title          String
+  tag            LibraryDocumentTag @default(OTHER)
+  source         DocumentSource     @default(CREATED)
+  body           String?
+  fileName       String?
+  fileUrl        String?
+  mimeType       String?
+  committeeId    String?
+  uploadedById   String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
-  committee  Committee? @relation(fields: [committeeId], references: [id], onDelete: SetNull)
-  uploadedBy User       @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  committee    Committee?    @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+  uploadedBy   User          @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
 
+  @@index([organizationId, tag, createdAt])
   @@index([committeeId, tag, createdAt])
   @@index([tag, createdAt])
 }
@@ -387,18 +591,48 @@ model ActivityLog {
 }
 
 model Event {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  startDate   DateTime
-  endDate     DateTime?
-  committeeId String
-  createdAt   DateTime  @default(now())
+  id             String         @id @default(cuid())
+  title          String
+  description    String?
+  kind           ScheduleKind   @default(EVENT)
+  format         ScheduleFormat @default(IN_PERSON)
+  location       String?
+  joinUrl        String?
+  agenda         String?
+  startDate      DateTime
+  endDate        DateTime?
+  committeeId    String?
+  organizationId String?
+  createdAt      DateTime       @default(now())
 
-  committee    Committee          @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  committee    Committee?         @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   rsvps        EventRsvp[]
   tasks        Task[]
   deliverables EventDeliverable[]
+  meeting      Meeting?
+  agendaItems  AgendaItem[]
+
+  @@index([committeeId, startDate])
+  @@index([organizationId, startDate])
+  @@index([kind, startDate])
+}
+
+model AgendaItem {
+  id           String   @id @default(cuid())
+  eventId      String
+  title        String
+  order        Int      @default(0)
+  assignmentId String?
+  reportId     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  @@index([eventId, order])
+  @@index([assignmentId])
 }
 
 model EventDeliverable {
@@ -432,13 +666,15 @@ model Meeting {
   id          String   @id @default(cuid())
   title       String
   date        DateTime
-  committeeId String
+  committeeId String?
+  eventId     String?  @unique
   createdById String
   approved    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  committee   Committee     @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  committee   Committee?    @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  event       Event?        @relation(fields: [eventId], references: [id], onDelete: SetNull)
   createdBy   User          @relation(fields: [createdById], references: [id])
   minutes     MinutePoint[]
   attendances Attendance[]
@@ -492,8 +728,48 @@ model CommitteeFeedback {
   @@index([committeeId, status, createdAt])
 }
 
-model AppSettings {
-  id                      String   @id @default("default")
-  committeeBudgetsEnabled Boolean  @default(false)
-  updatedAt               DateTime @updatedAt
+model MessageThread {
+  id             String            @id @default(cuid())
+  organizationId String
+  kind           MessageThreadKind @default(DIRECT)
+  subject        String?
+  committeeId    String?
+  createdById    String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  committee    Committee?           @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+  participants MessageParticipant[]
+  messages     Message[]
+
+  @@index([organizationId, updatedAt])
+  @@index([committeeId])
+}
+
+model MessageParticipant {
+  id         String    @id @default(cuid())
+  threadId   String
+  userId     String
+  lastReadAt DateTime?
+  joinedAt   DateTime  @default(now())
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  threadId  String
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User          @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
 }

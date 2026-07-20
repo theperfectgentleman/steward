@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useApp } from "@/providers/AppProvider";
 import { AppShell } from "@/components/AppShell";
 import { LoginPicker } from "@/components/LoginPicker";
+import { OrgPickerLanding } from "@/components/OrgPickerLanding";
 import { PageLoader } from "@/components/loading/PageShimmer";
 import {
   dismissBootSplash,
@@ -13,7 +14,13 @@ import {
 
 let entranceAnimationPlayed = false;
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
+export function AuthGate({
+  children,
+  requireOrg = true,
+}: {
+  children: React.ReactNode;
+  requireOrg?: boolean;
+}) {
   const { user, loading } = useApp();
   const [entranceDone, setEntranceDone] = useState(entranceAnimationPlayed);
 
@@ -43,13 +50,21 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (loading || !entranceDone) {
     return (
-      <div className="min-h-dvh bg-surface" aria-busy="true" aria-label="Loading Steward">
+      <div
+        className="min-h-dvh bg-surface"
+        aria-busy="true"
+        aria-label="Loading Steward"
+      >
         <PageLoader label={loading ? "Signing in…" : "Loading Steward…"} />
       </div>
     );
   }
 
   if (!user) return <LoginPicker />;
+
+  if (requireOrg && !user.activeOrganizationId) {
+    return <OrgPickerLanding />;
+  }
 
   return <AppShell>{children}</AppShell>;
 }

@@ -16,8 +16,8 @@ const variants = {
 };
 
 const sizes = {
-  md: "min-h-12 px-5 py-3 text-base rounded-xl",
-  lg: "min-h-14 px-6 py-4 text-lg rounded-2xl",
+  md: "min-h-10 px-4 py-2 text-sm rounded-lg",
+  lg: "min-h-12 px-5 py-2.5 text-base rounded-xl",
 };
 
 export function TouchButton({

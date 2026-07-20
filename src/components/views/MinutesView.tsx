@@ -196,7 +196,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
 
   if (!committeeId) {
     return (
-      <p className="text-muted text-center py-12 font-medium">
+      <p className="text-muted text-center py-6 font-medium">
         Select a committee to view minutes.
       </p>
     );
@@ -220,7 +220,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header Panel */}
       <div className="flex items-center justify-between gap-3 border-b border-charcoal/5 pb-4">
         <p className="text-sm text-muted">Meeting logs, minutes &amp; attendance</p>
@@ -246,7 +246,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
       </div>
 
       {/* Desktop Split-Screen Layout */}
-      <div className="hidden lg:grid grid-cols-12 gap-6 items-start">
+      <div className="hidden lg:grid grid-cols-12 gap-4 items-start">
         {/* Left Side: Meeting list panel */}
         <div className="col-span-4 space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-1">
           <span className="text-xs font-bold text-accent uppercase tracking-wider block mb-1">
@@ -263,7 +263,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
                     setSelectedMeetingId(m.id);
                     setIsCreating(false);
                   }}
-                  className={`w-full flex flex-col items-start text-left p-4 rounded-xl border transition-all ${
+                  className={`w-full flex flex-col items-start text-left px-3 py-2.5 rounded-lg border transition-all ${
                     active
                       ? "bg-white border-primary ring-2 ring-primary/20 shadow-xs"
                       : "bg-white border-charcoal/5 hover:border-charcoal/20 shadow-2xs"
@@ -300,7 +300,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
               if (meetings.length > 0) setSelectedMeetingId(meetings[0].id);
             })
           ) : selectedMeeting ? (
-            <article className="bg-white rounded-2xl border border-charcoal/5 p-6 space-y-6 shadow-xs">
+            <article className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-4 shadow-xs">
               <div className="flex flex-wrap items-start justify-between gap-4 border-b border-charcoal/5 pb-4">
                 <div>
                   <h2 className="text-xl font-extrabold text-charcoal tracking-tight">{selectedMeeting.title}</h2>
@@ -418,7 +418,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
               </div>
             </article>
           ) : (
-            <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-charcoal/10 rounded-2xl text-center bg-white">
+            <div className="flex flex-col items-center justify-center px-4 py-8 border-2 border-dashed border-charcoal/10 rounded-xl text-center bg-white">
               <FileText className="h-10 w-10 text-muted/60 mb-2" />
               <p className="text-sm font-semibold text-muted">Select meeting to view or log a new session.</p>
             </div>
@@ -432,7 +432,7 @@ export function MinutesView({ committeeId }: { committeeId: string }) {
           <article
             key={m.id}
             id={`meeting-mobile-${m.id}`}
-            className="bg-white rounded-2xl border border-charcoal/5 p-5 space-y-5 shadow-2xs"
+            className="bg-white rounded-xl border border-charcoal/5 p-3 space-y-3 shadow-2xs"
           >
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-charcoal/5 pb-3">
               <div>
@@ -681,7 +681,7 @@ function MeetingEditor({
   };
 
   return (
-    <div className="space-y-5 bg-white rounded-2xl border border-charcoal/5 p-5 shadow-xs">
+    <div className="space-y-3 bg-white rounded-xl border border-charcoal/5 p-4 shadow-xs">
       <div className="space-y-4">
         <label className="block">
           <span className="text-xs font-bold text-accent uppercase tracking-wider">Meeting Title</span>

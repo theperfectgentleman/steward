@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FileDown, FileText, Link2, Paperclip } from "lucide-react";
+import { CommentThread } from "@/components/CommentThread";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { TouchButton } from "@/components/TouchButton";
 import { FormSelect } from "@/components/FormSelect";
@@ -37,10 +39,18 @@ type Committee = { id: string; name: string; charterLetter: string };
 
 type CreateSource = "CREATED" | "UPLOAD";
 
-export function DocumentsView() {
+export function DocumentsView({
+  committeeId: lockedCommitteeId,
+  committeeName,
+}: {
+  /** When set, scopes list/create to this committee workspace. */
+  committeeId?: string;
+  committeeName?: string;
+} = {}) {
   const { user } = useApp();
   const searchParams = useSearchParams();
   const initialTag = searchParams.get("tag");
+  const scoped = Boolean(lockedCommitteeId);
 
   const perm = user ? toPermissionUser(user) : null;
   const isExecutive = perm && canViewAllCommittees(perm);
@@ -62,14 +72,19 @@ export function DocumentsView() {
   const [body, setBody] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileUrl, setFileUrl] = useState("");
-  const [committeeId, setCommitteeId] = useState<string>("");
+  const [committeeId, setCommitteeId] = useState<string>(lockedCommitteeId ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  useEffect(() => {
+    if (lockedCommitteeId) setCommitteeId(lockedCommitteeId);
+  }, [lockedCommitteeId]);
 
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
     if (tagFilter !== "ALL") params.set("tag", tagFilter);
+    if (lockedCommitteeId) params.set("committeeId", lockedCommitteeId);
     const qs = params.toString();
     fetch(`/api/documents${qs ? `?${qs}` : ""}`)
       .then((r) => r.json())
@@ -79,23 +94,23 @@ export function DocumentsView() {
       })
       .catch(() => setDocuments([]))
       .finally(() => setLoading(false));
-  }, [tagFilter]);
+  }, [tagFilter, lockedCommitteeId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || scoped) return;
     const scope =
-      user.role === "SUPER_ADMIN" || user.role === "CHURCH_EXECUTIVE"
+      user.role === "ORG_ADMIN" || user.role === "ORG_PARTICIPANT"
         ? "all"
         : user.id;
     fetch(`/api/committees?scope=${scope}`)
       .then((r) => r.json())
       .then((data: Committee[]) => setCommittees(data))
       .catch(() => setCommittees([]));
-  }, [user]);
+  }, [user, scoped]);
 
   const resetCreate = () => {
     setTitle("");
@@ -104,7 +119,7 @@ export function DocumentsView() {
     setFileUrl("");
     setTag("OTHER");
     setSource("CREATED");
-    setCommitteeId("");
+    setCommitteeId(lockedCommitteeId ?? "");
     setCreateError("");
   };
 
@@ -124,7 +139,7 @@ export function DocumentsView() {
           body: source === "CREATED" ? body : undefined,
           fileName: source === "UPLOAD" ? fileName : undefined,
           fileUrl: source === "UPLOAD" ? fileUrl : undefined,
-          committeeId: committeeId || null,
+          committeeId: lockedCommitteeId || committeeId || null,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -186,25 +201,27 @@ export function DocumentsView() {
     URL.revokeObjectURL(url);
   };
 
-  if (user?.role === "SYSTEM_ADMIN") {
+  if (user?.role === "ORG_TECH") {
     return (
-      <p className="text-center text-muted py-12">
+      <p className="text-center text-muted py-6">
         Document library is not available for system administrators.
       </p>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-charcoal">Documents</h1>
-          <p className="text-muted mt-1">
-            Reports, policies, and attachments across committees.
+          <h1 className="text-xl font-bold text-charcoal">Documents</h1>
+          <p className="text-muted mt-0.5 text-sm">
+            {scoped
+              ? `Reports, policies, and attachments for ${committeeName ?? "this committee"}.`
+              : "Org-wide and committee library — reports, policies, and attachments."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {isExecutive && (
+          {!scoped && isExecutive && (
             <TouchButton variant="ghost" onClick={handleExportReport}>
               <FileDown className="h-5 w-5" />
               Export presbytery report
@@ -217,7 +234,7 @@ export function DocumentsView() {
       </div>
 
       {showCreate && (
-        <div className="rounded-2xl border border-charcoal/10 bg-white p-5 shadow-xs space-y-4 max-w-2xl">
+        <div className="rounded-xl border border-charcoal/10 bg-white p-4 shadow-xs space-y-3 max-w-xl">
           <SegmentedControl
             options={[
               { value: "CREATED", label: "Create in Steward" },
@@ -242,13 +259,19 @@ export function DocumentsView() {
               </option>
             ))}
           </FormSelect>
-          <SearchableCommitteeSelect
-            committees={committees}
-            value={committeeId}
-            onChange={setCommitteeId}
-            allowEmpty
-            emptyLabel="Church-wide (no committee)"
-          />
+          {scoped ? (
+            <p className="rounded-lg border border-charcoal/10 bg-surface/60 px-3 py-2 text-sm text-muted">
+              Saving to {committeeName ?? "this committee"}
+            </p>
+          ) : (
+            <SearchableCommitteeSelect
+              committees={committees}
+              value={committeeId}
+              onChange={setCommitteeId}
+              allowEmpty
+              emptyLabel="Church-wide (no committee)"
+            />
+          )}
           {source === "CREATED" ? (
             <textarea
               value={body}
@@ -276,17 +299,18 @@ export function DocumentsView() {
           {createError && (
             <p className="text-sm text-accent bg-accent/10 rounded-xl p-3">{createError}</p>
           )}
-          <TouchButton
-            className="w-full"
-            disabled={
-              !title.trim() ||
-              submitting ||
-              (source === "CREATED" ? !body.trim() : !fileName.trim() && !fileUrl.trim())
-            }
-            onClick={handleCreate}
-          >
-            {submitting ? "Saving…" : "Save document"}
-          </TouchButton>
+          <div className="flex flex-wrap justify-end gap-2">
+            <TouchButton
+              disabled={
+                !title.trim() ||
+                submitting ||
+                (source === "CREATED" ? !body.trim() : !fileName.trim() && !fileUrl.trim())
+              }
+              onClick={handleCreate}
+            >
+              {submitting ? "Saving…" : "Save document"}
+            </TouchButton>
+          </div>
         </div>
       )}
 
@@ -318,75 +342,90 @@ export function DocumentsView() {
         ))}
       </div>
 
-      {loading && <p className="text-center text-muted py-12">Loading…</p>}
+      {loading && <p className="text-center text-muted py-6">Loading…</p>}
 
       {!loading && documents.length === 0 && (
-        <p className="text-center text-muted py-12 rounded-2xl border border-charcoal/5 bg-white">
-          No documents yet. Add a report, policy, or attachment to get started.
+        <p className="text-center text-muted py-6 rounded-xl border border-charcoal/5 bg-white text-sm">
+          {scoped
+            ? "No documents for this committee yet."
+            : "No documents yet. Add a report, policy, or attachment to get started."}
         </p>
       )}
 
-      <ul className="space-y-3">
+      <ul className="max-w-3xl space-y-1.5">
         {documents.map((doc) => {
           const expanded = expandedId === doc.id;
           const SourceIcon = doc.source === "UPLOAD" ? Paperclip : FileText;
           return (
-            <li key={doc.id}>
-              <button
-                type="button"
-                onClick={() => setExpandedId(expanded ? null : doc.id)}
-                className="w-full text-left rounded-2xl border border-charcoal/10 bg-white p-4 shadow-xs hover:border-primary/30 transition-colors"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <SourceIcon className="h-4 w-4" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-charcoal">{doc.title}</p>
-                      <span className="text-xs font-bold uppercase tracking-wide text-accent bg-accent/10 px-2 py-0.5 rounded-lg">
-                        {LIBRARY_DOCUMENT_TAG_LABELS[doc.tag]}
-                      </span>
-                      <span className="text-xs text-muted">
-                        {DOCUMENT_SOURCE_LABELS[doc.source]}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted mt-1">
-                      {doc.committee
-                        ? `${doc.committee.charterLetter.toUpperCase()}) ${doc.committee.name}`
-                        : "Church-wide"}
-                      {" · "}
-                      {doc.uploadedBy.name}
-                      {" · "}
-                      {formatDate(doc.createdAt)}
-                    </p>
-                    {expanded && doc.source === "CREATED" && doc.body && (
-                      <p className="mt-3 text-sm text-charcoal whitespace-pre-wrap leading-relaxed border-t border-charcoal/10 pt-3">
-                        {doc.body}
-                      </p>
-                    )}
-                    {expanded && doc.source === "UPLOAD" && (
-                      <div className="mt-3 border-t border-charcoal/10 pt-3">
-                        {doc.fileName && (
-                          <p className="text-sm text-charcoal">{doc.fileName}</p>
-                        )}
-                        {doc.fileUrl && (
-                          <a
-                            href={doc.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary mt-2 hover:underline"
-                          >
-                            <Link2 className="h-4 w-4" />
-                            Open attachment
-                          </a>
-                        )}
+            <li key={doc.id} className="rounded-xl border border-charcoal/10 bg-white shadow-xs overflow-hidden">
+              <div className="flex items-stretch">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(expanded ? null : doc.id)}
+                  className="flex-1 text-left px-3 py-2.5 hover:bg-primary/[0.02] transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <SourceIcon className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-charcoal text-sm">{doc.title}</p>
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-accent bg-accent/10 px-1.5 py-0.5 rounded-md">
+                          {LIBRARY_DOCUMENT_TAG_LABELS[doc.tag]}
+                        </span>
+                        <span className="text-xs text-muted">
+                          {DOCUMENT_SOURCE_LABELS[doc.source]}
+                        </span>
                       </div>
-                    )}
+                      <p className="text-xs text-muted mt-0.5">
+                        {!scoped &&
+                          (doc.committee
+                            ? `${doc.committee.charterLetter.toUpperCase()}) ${doc.committee.name}`
+                            : "Church-wide")}
+                        {!scoped && " · "}
+                        {doc.uploadedBy.name}
+                        {" · "}
+                        {formatDate(doc.createdAt)}
+                      </p>
+                    </div>
                   </div>
+                </button>
+                <Link
+                  href={`/documents/${doc.id}`}
+                  className="shrink-0 px-3 flex items-center text-sm font-semibold text-primary border-l border-charcoal/10 hover:bg-primary/5"
+                >
+                  Open
+                </Link>
+              </div>
+              {expanded && (
+                <div className="border-t border-charcoal/10 px-4 pb-4 space-y-3">
+                  {doc.source === "CREATED" && doc.body && (
+                    <p className="pt-3 text-sm text-charcoal whitespace-pre-wrap leading-relaxed">
+                      {doc.body}
+                    </p>
+                  )}
+                  {doc.source === "UPLOAD" && (
+                    <div className="pt-3">
+                      {doc.fileName && (
+                        <p className="text-sm text-charcoal">{doc.fileName}</p>
+                      )}
+                      {doc.fileUrl && (
+                        <a
+                          href={doc.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary mt-2 hover:underline"
+                        >
+                          <Link2 className="h-4 w-4" />
+                          Open attachment
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  <CommentThread entityType="LIBRARY_DOCUMENT" entityId={doc.id} />
                 </div>
-              </button>
+              )}
             </li>
           );
         })}

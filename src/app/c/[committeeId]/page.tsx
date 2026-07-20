@@ -9,7 +9,7 @@ export default function CommitteePage() {
   return (
     <AuthGate>
       <CommitteeGuard>
-        <CommitteePageHeader>
+        <CommitteePageHeader tabsAfterTitle>
           <CommitteeDashboardView />
         </CommitteePageHeader>
       </CommitteeGuard>

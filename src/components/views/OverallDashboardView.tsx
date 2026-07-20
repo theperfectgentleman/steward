@@ -131,7 +131,7 @@ export function OverallDashboardView() {
       label: "Suggestions",
       icon: MessageSquarePlus,
     },
-    user?.role !== "SYSTEM_ADMIN"
+    user?.role !== "ORG_TECH"
       ? {
           key: "documents",
           href: documentsPath(),
@@ -142,14 +142,14 @@ export function OverallDashboardView() {
   ].filter((action): action is { key: string; href: string; label: string; icon: typeof FileText } => action != null);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <MyWorkHub />
 
       <div>
-        <h1 className="text-2xl font-bold text-charcoal">
+        <h1 className="text-xl font-bold text-charcoal">
           {isExecutive ? "Presbytery Dashboard" : "Overall Dashboard"}
         </h1>
-        <p className="text-muted mt-1">
+        <p className="text-sm text-muted mt-0.5">
           {isExecutive
             ? "Real-time view across all 19 committees"
             : "Your committees at a glance"}
@@ -164,12 +164,12 @@ export function OverallDashboardView() {
       />
 
       {quickActions.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+        <section className="space-y-2">
+          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
             Quick actions
           </h2>
           <div
-            className={`grid grid-cols-1 gap-3 ${
+            className={`grid grid-cols-1 gap-2 ${
               quickActions.length >= 3
                 ? "sm:grid-cols-3"
                 : quickActions.length === 2
@@ -193,21 +193,21 @@ export function OverallDashboardView() {
       {isExecutive && awaitingClose.length > 0 && (
         <section
           id="dashboard-awaiting-close"
-          className="rounded-2xl border border-accent/30 bg-accent/5 p-4 space-y-3"
+          className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 space-y-2"
         >
-          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
             Awaiting my close ({awaitingClose.length})
           </h2>
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {awaitingClose.map((a) => (
               <li key={a.id}>
                 <Link
                   href={`/assignments/${a.id}?action=close`}
-                  className="flex items-center justify-between gap-3 rounded-xl bg-white border border-charcoal/10 px-4 py-3 touch-target-lg hover:border-primary/40"
+                  className="flex items-center justify-between gap-3 rounded-lg bg-white border border-charcoal/10 px-3 py-2 hover:border-primary/40"
                 >
-                  <span className="font-semibold text-charcoal truncate">{a.title}</span>
-                  <span className="text-xs text-muted shrink-0">
-                    {a.targetCommittee.name}
+                  <span className="text-sm font-semibold text-charcoal truncate">{a.title}</span>
+                  <span className="text-[11px] text-muted shrink-0">
+                    {a.targetCommittee?.name ?? "Personal"}
                   </span>
                 </Link>
               </li>
@@ -216,17 +216,17 @@ export function OverallDashboardView() {
         </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <section id="dashboard-committees" className="lg:col-span-2 space-y-4">
-          <h2 className="text-xs font-bold text-accent uppercase tracking-wider">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <section id="dashboard-committees" className="lg:col-span-2 space-y-2">
+          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
             Committees
           </h2>
           {stats.length === 0 ? (
-            <p className="text-center text-muted py-12 rounded-2xl border border-charcoal/5 bg-white">
+            <p className="text-center text-muted py-6 rounded-xl border border-charcoal/5 bg-white text-sm">
               No committee data yet.
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {stats.map((s) => {
                 const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
                 return (
@@ -234,10 +234,10 @@ export function OverallDashboardView() {
                     key={s.id}
                     href={committeePath(s.id)}
                     onClick={() => localStorage.setItem("unitycommit-committee", s.id)}
-                    className="flex flex-col gap-2 rounded-2xl border border-charcoal/5 bg-white p-4 shadow-xs hover:border-primary/30 transition-colors touch-target-lg"
+                    className="flex flex-col gap-1.5 rounded-xl border border-charcoal/5 bg-white px-3 py-2.5 shadow-xs hover:border-primary/30 transition-colors"
                   >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <span className="w-9 h-9 flex items-center justify-center rounded-xl bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0 text-sm">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <span className="w-7 h-7 flex items-center justify-center rounded-lg bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0 text-xs">
                         {s.charterLetter}
                       </span>
                       <div className="flex-1 min-w-0">
@@ -245,17 +245,17 @@ export function OverallDashboardView() {
                           <p className="font-semibold text-charcoal text-sm leading-snug line-clamp-2">
                             {s.name}
                           </p>
-                          <span className="text-xs font-bold text-charcoal shrink-0">{pct}%</span>
+                          <span className="text-xs font-bold text-charcoal shrink-0 tabular-nums">{pct}%</span>
                         </div>
                       </div>
                     </div>
-                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
                       <div
                         className="h-full bg-primary rounded-full"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <p className="text-xs text-muted font-medium">
+                    <p className="text-[11px] text-muted font-medium">
                       {s.done}/{s.total} tasks · {s.blocked} awaiting
                       {s.activeProjects != null && ` · ${s.activeProjects} projects`}
                     </p>
@@ -266,8 +266,8 @@ export function OverallDashboardView() {
           )}
         </section>
 
-        <section id="dashboard-alerts" className="space-y-4">
-          <h2 className="text-sm font-bold text-accent uppercase tracking-wide">
+        <section id="dashboard-alerts" className="space-y-2">
+          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
             Alert Feed
           </h2>
           <AlertFeed alerts={alerts} onAlertClick={handleAlertClick} />

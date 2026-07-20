@@ -27,7 +27,7 @@ export function SegmentedControl<T extends string>({
             type="button"
             disabled={disabled}
             onClick={() => onChange(opt.value)}
-            className={`flex-1 min-w-[calc(50%-0.25rem)] touch-target-lg rounded-xl px-4 py-3 text-sm font-semibold border-2 transition-all active:scale-[0.98] ${
+            className={`flex-1 min-w-[calc(50%-0.25rem)] touch-target rounded-lg px-3 py-2 text-sm font-semibold border transition-all active:scale-[0.98] ${
               selected
                 ? "bg-primary border-primary text-white shadow-sm"
                 : "bg-white border-charcoal/15 text-charcoal hover:border-charcoal/30"

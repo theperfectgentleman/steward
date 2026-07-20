@@ -14,9 +14,9 @@ export function HealthRing({ label, completed, total, blocked = 0 }: HealthRingP
   const offset = circumference - (pct / 100) * circumference;
 
   return (
-    <div className="flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border border-charcoal/10">
-      <div className="relative h-24 w-24">
-        <svg className="h-24 w-24 -rotate-90" viewBox="0 0 96 96">
+    <div className="flex flex-col items-center gap-1.5 py-2">
+      <div className="relative h-20 w-20">
+        <svg className="h-20 w-20 -rotate-90" viewBox="0 0 96 96">
           <circle
             cx="48"
             cy="48"
@@ -38,7 +38,7 @@ export function HealthRing({ label, completed, total, blocked = 0 }: HealthRingP
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-bold text-charcoal">{pct}%</span>
+          <span className="text-lg font-bold text-charcoal tabular-nums">{pct}%</span>
         </div>
       </div>
       <p className="text-sm font-semibold text-charcoal text-center leading-tight">

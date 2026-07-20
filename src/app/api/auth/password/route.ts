@@ -51,7 +51,11 @@ export async function POST(request: Request) {
       },
       include: {
         committeeMemberships: true,
-        presbyteryMembership: true,
+        supervisoryMemberships: true,
+        organizationMemberships: {
+          include: { organization: true },
+        },
+        platformAdmin: true,
       },
     });
 
@@ -71,7 +75,19 @@ export async function POST(request: Request) {
   });
 
   if (body.purpose === "INVITE") {
-    const payload = toSessionPayload(user);
+    const payload = toSessionPayload({
+      ...user,
+      isPlatformAdmin: Boolean(user.platformAdmin),
+      supervisoryMemberships: user.supervisoryMemberships,
+      organizationMemberships: user.organizationMemberships.map((m) => ({
+        role: m.role,
+        organization: {
+          id: m.organization.id,
+          name: m.organization.name,
+          status: m.organization.status,
+        },
+      })),
+    });
     const response = NextResponse.json(payload);
     setSessionCookie(response, user.id);
     return response;

@@ -19,6 +19,33 @@ export async function GET(request: Request) {
   const perm = asPermissionUser(auth.user);
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
+  const eventId = searchParams.get("eventId");
+
+  if (eventId) {
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+    if (event.committeeId) {
+      const access = assertCommitteeAccess(auth.user, event.committeeId);
+      if (access) return access;
+    } else if (!canViewAllCommittees(perm)) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    }
+
+    const meeting = await prisma.meeting.findUnique({
+      where: { eventId },
+      include: {
+        committee: { select: { name: true } },
+        minutes: { orderBy: { order: "asc" } },
+        attendances: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    return NextResponse.json(meeting ? [meeting] : []);
+  }
 
   if (committeeId) {
     const access = assertCommitteeAccess(auth.user, committeeId);
@@ -58,6 +85,7 @@ export async function POST(request: Request) {
     title?: string;
     date?: string;
     committeeId?: string;
+    eventId?: string;
     points?: string[];
     memberIds?: string[];
   };
@@ -91,6 +119,7 @@ export async function POST(request: Request) {
       title: body.title,
       date: new Date(body.date),
       committeeId: body.committeeId,
+      eventId: body.eventId || null,
       createdById: auth.user.id,
       minutes: {
         create: (body.points ?? []).map((content, i) => ({
@@ -121,10 +150,15 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as {
     id?: string;
     approved?: boolean;
+    points?: string[];
   };
 
-  if (!body.id || body.approved === undefined) {
+  if (!body.id) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  if (body.approved === undefined && body.points === undefined) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
   const existing = await prisma.meeting.findUnique({ where: { id: body.id } });
@@ -132,29 +166,61 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
   }
 
+  if (!existing.committeeId) {
+    return NextResponse.json(
+      { error: "Meeting is not linked to a committee" },
+      { status: 400 },
+    );
+  }
+
   const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canApproveMinutes(perm, existing.committeeId)) {
-    return NextResponse.json(
-      { error: "Only the chairperson can approve minutes" },
-      { status: 403 },
-    );
-  }
-
   const access = assertCommitteeAccess(auth.user, existing.committeeId);
   if (access) return access;
 
-  const meeting = await prisma.meeting.update({
-    where: { id: body.id },
-    data: { approved: body.approved },
-    include: {
-      minutes: { orderBy: { order: "asc" } },
-      attendances: {
-        include: { user: { select: { id: true, name: true } } },
+  if (body.approved !== undefined) {
+    if (!canApproveMinutes(perm, existing.committeeId)) {
+      return NextResponse.json(
+        { error: "Only the chairperson can approve minutes" },
+        { status: 403 },
+      );
+    }
+  }
+
+  if (body.points !== undefined) {
+    if (!canLogMinutes(perm, existing.committeeId)) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    }
+  }
+
+  const meeting = await prisma.$transaction(async (tx) => {
+    if (body.points !== undefined) {
+      await tx.minutePoint.deleteMany({ where: { meetingId: body.id! } });
+      if (body.points.length > 0) {
+        await tx.minutePoint.createMany({
+          data: body.points.map((content, i) => ({
+            meetingId: body.id!,
+            content,
+            order: i + 1,
+          })),
+        });
+      }
+    }
+
+    return tx.meeting.update({
+      where: { id: body.id! },
+      data: {
+        ...(body.approved !== undefined && { approved: body.approved }),
       },
-    },
+      include: {
+        minutes: { orderBy: { order: "asc" } },
+        attendances: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
+    });
   });
 
   return NextResponse.json(meeting);

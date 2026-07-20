@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Link2 } from "lucide-react";
+import { Check, Share2 } from "lucide-react";
 import { absoluteUrl } from "@/lib/navigation";
 
 type CopyLinkButtonProps = {
@@ -9,6 +9,8 @@ type CopyLinkButtonProps = {
   url?: string;
   label?: string;
   className?: string;
+  /** Icon-only control (aria-label still uses `label`). */
+  iconOnly?: boolean;
 };
 
 export function CopyLinkButton({
@@ -16,6 +18,7 @@ export function CopyLinkButton({
   url,
   label = "Copy link",
   className = "",
+  iconOnly = false,
 }: CopyLinkButtonProps) {
   const [copied, setCopied] = useState(false);
 
@@ -35,18 +38,21 @@ export function CopyLinkButton({
     <button
       type="button"
       onClick={handleCopy}
-      className={`inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors touch-target ${className}`}
-      aria-label={label}
+      title={copied ? "Copied" : label}
+      className={`inline-flex items-center justify-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors touch-target ${
+        iconOnly ? "h-8 w-8 rounded-lg hover:bg-primary/10" : ""
+      } ${className}`}
+      aria-label={copied ? "Copied" : label}
     >
       {copied ? (
         <>
           <Check className="h-4 w-4" />
-          Copied
+          {!iconOnly && "Copied"}
         </>
       ) : (
         <>
-          <Link2 className="h-4 w-4" />
-          {label}
+          <Share2 className="h-4 w-4" />
+          {!iconOnly && label}
         </>
       )}
     </button>

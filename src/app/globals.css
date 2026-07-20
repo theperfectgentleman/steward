@@ -50,18 +50,31 @@ body {
   min-height: 100dvh;
 }
 
+/* Dense by default; keep larger hit areas on coarse pointers / phones */
 .touch-target {
-  min-height: 48px;
-  min-width: 48px;
+  min-height: 40px;
+  min-width: 40px;
 }
 
 .touch-target-lg {
-  min-height: 56px;
-  min-width: 56px;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 1023px), (pointer: coarse) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .touch-target-lg {
+    min-height: 48px;
+    min-width: 48px;
+  }
 }
 
 .input-touch {
-  min-height: 52px;
+  min-height: 44px;
 }
 
 .sheet-enter {
@@ -298,5 +311,31 @@ body {
   padding: 0;
   opacity: 0;
   cursor: pointer;
+}
+
+@keyframes org-picker-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.org-picker-enter {
+  animation: org-picker-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.org-picker-card {
+  animation: org-picker-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-picker-enter,
+  .org-picker-card {
+    animation: none;
+  }
 }
 

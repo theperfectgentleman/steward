@@ -12,14 +12,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) return <>{children}</>;
 
   return (
-    <div className="flex min-h-dvh">
-      <SidebarNav role={user.role} />
-      <div className="flex flex-col flex-1 min-w-0 pb-20 lg:pb-0">
+    <div className="flex min-h-dvh bg-surface">
+      <SidebarNav />
+      <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
         <TopBar />
-        <main className="flex-1 px-4 py-4 lg:px-6 lg:py-5 w-full max-w-[1600px] mx-auto">
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-3 lg:px-5 lg:py-4">
           {children}
         </main>
-        <BottomNav role={user.role} />
+        <BottomNav />
         <WorkFab />
       </div>
     </div>

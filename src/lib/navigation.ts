@@ -6,7 +6,13 @@ export type CommitteeRef = {
 
 export function committeePath(
   committeeId: string,
-  section?: "tasks" | "schedule" | "minutes" | "projects" | "assignments",
+  section?:
+    | "tasks"
+    | "schedule"
+    | "minutes"
+    | "projects"
+    | "assignments"
+    | "documents",
 ) {
   const base = `/c/${committeeId}`;
   return section ? `${base}/${section}` : base;
@@ -53,7 +59,7 @@ export function eventPath(committeeId: string, eventId: string) {
 }
 
 export function meetingPath(committeeId: string, meetingId: string) {
-  return `${committeePath(committeeId, "minutes")}?meeting=${encodeURIComponent(meetingId)}`;
+  return `${committeePath(committeeId, "schedule")}?meeting=${encodeURIComponent(meetingId)}`;
 }
 
 export function suggestionsPath(committeeId?: string) {
@@ -63,9 +69,15 @@ export function suggestionsPath(committeeId?: string) {
   return qs ? `/suggestions?${qs}` : "/suggestions";
 }
 
-export function documentsPath(tag?: string) {
+export function documentsPath(opts?: { tag?: string; committeeId?: string }) {
+  if (opts?.committeeId) {
+    const params = new URLSearchParams();
+    if (opts.tag) params.set("tag", opts.tag);
+    const qs = params.toString();
+    return `${committeePath(opts.committeeId, "documents")}${qs ? `?${qs}` : ""}`;
+  }
   const params = new URLSearchParams();
-  if (tag) params.set("tag", tag);
+  if (opts?.tag) params.set("tag", opts.tag);
   const qs = params.toString();
   return qs ? `/documents?${qs}` : "/documents";
 }
@@ -96,7 +108,7 @@ export function parseCommitteeId(pathname: string): string | null {
 
 export function parseCommitteeSection(
   pathname: string,
-): "overview" | "tasks" | "schedule" | "minutes" | "projects" | "assignments" {
+): "overview" | "tasks" | "schedule" | "minutes" | "projects" | "assignments" | "documents" {
   const committeeId = parseCommitteeId(pathname);
   if (!committeeId) return "overview";
 
@@ -107,5 +119,6 @@ export function parseCommitteeSection(
   if (rest.startsWith("/schedule")) return "schedule";
   if (rest.startsWith("/minutes")) return "minutes";
   if (rest.startsWith("/assignments")) return "assignments";
+  if (rest.startsWith("/documents")) return "documents";
   return "overview";
 }

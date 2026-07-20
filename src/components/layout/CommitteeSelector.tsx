@@ -210,13 +210,14 @@ export function CommitteeSelector() {
     localStorage.setItem("unitycommit-committee", c.id);
     setStoredCommitteeId(c.id);
     const section = pathname.match(
-      /\/(tasks|schedule|minutes|projects|assignments)(?:\/|$)/,
+      /\/(tasks|schedule|minutes|projects|assignments|documents)(?:\/|$)/,
     )?.[1] as
       | "tasks"
       | "schedule"
       | "minutes"
       | "projects"
       | "assignments"
+      | "documents"
       | undefined;
     router.push(committeePath(c.id, section));
     setOpen(false);

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BottomSheet } from "@/components/BottomSheet";
 import { TouchButton } from "@/components/TouchButton";
 import { SearchableCommitteeSelect } from "@/components/SearchableCommitteeSelect";
 import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
@@ -16,6 +15,7 @@ import {
   canCreateReferral,
 } from "@/lib/types";
 import { PageShimmer } from "@/components/loading/PageShimmer";
+import { X } from "lucide-react";
 
 type AssignmentRow = {
   id: string;
@@ -24,7 +24,7 @@ type AssignmentRow = {
   source: string;
   priority: string;
   createdBy: { name: string };
-  targetCommittee: { name: string };
+  targetCommittee: { name: string } | null;
 };
 
 export function AssignmentsInboxView() {
@@ -62,6 +62,12 @@ export function AssignmentsInboxView() {
     }
   }, [searchParams]);
 
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setTargetCommitteeId("");
+  };
+
   const createReferral = async () => {
     if (!title.trim() || !targetCommitteeId || !committeeId) return;
     await fetch("/api/assignments", {
@@ -76,15 +82,14 @@ export function AssignmentsInboxView() {
         status: "ASSIGNED",
       }),
     });
+    resetForm();
     setReferralOpen(false);
-    setTitle("");
-    setDescription("");
     load();
   };
 
   if (loading) return <PageShimmer variant="list" lines={5} />;
   if (!committee || !committeeId || !user) {
-    return <p className="text-muted text-center py-12">Committee not found.</p>;
+    return <p className="text-muted text-center py-6">Committee not found.</p>;
   }
 
   const perm = toPermissionUser(user);
@@ -92,47 +97,43 @@ export function AssignmentsInboxView() {
   const canInbox = canAcceptAssignments(perm, committeeId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-charcoal">Assignments</h1>
+          <h1 className="text-xl font-bold text-charcoal">Assignments</h1>
           <p className="text-sm text-muted mt-1">
-            Presbytery directives and chair-to-chair referrals for {committee.name}
+            Supervisory directives and chair-to-chair referrals for {committee.name}
           </p>
           <p className="text-xs text-muted mt-2">
-            Referrals go directly to another committee. Use Report Issue for member suggestions.
+            Referrals go directly to another committee&apos;s assignment inbox.
           </p>
         </div>
-        {canRefer && (
+        {canRefer && !referralOpen && (
           <TouchButton onClick={() => setReferralOpen(true)}>Refer</TouchButton>
         )}
       </div>
 
-      {assignments.length === 0 ? (
-        <div className="rounded-2xl border border-charcoal/10 bg-white p-8 text-center text-muted">
-          No assignments for this committee.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {assignments.map((a) => (
-            <li key={a.id}>
-              <Link
-                href={`/assignments/${a.id}${a.status === "ASSIGNED" && canInbox ? "?action=accept" : ""}`}
-                className="block rounded-2xl border border-charcoal/10 bg-white p-4 touch-target"
-              >
-                <p className="font-semibold text-charcoal">{a.title}</p>
-                <p className="text-sm text-muted mt-1">
-                  {a.source === "PRESBYTERY" ? "Presbytery" : "Referral"} · From {a.createdBy.name} ·{" "}
-                  {ASSIGNMENT_STATUS_LABELS[a.status as keyof typeof ASSIGNMENT_STATUS_LABELS]}
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <BottomSheet open={referralOpen} onClose={() => setReferralOpen(false)} title="Refer to committee">
-        <div className="space-y-4 p-1">
+      {canRefer && referralOpen && (
+        <section
+          className="max-w-xl rounded-xl border border-charcoal/10 bg-white p-4 space-y-3 shadow-2xs"
+          aria-labelledby="refer-heading"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <h2 id="refer-heading" className="text-lg font-bold text-charcoal">
+              Refer to committee
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                resetForm();
+                setReferralOpen(false);
+              }}
+              className="touch-target rounded-xl text-muted hover:text-charcoal hover:bg-slate-50"
+              aria-label="Cancel"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -152,11 +153,50 @@ export function AssignmentsInboxView() {
             onChange={setTargetCommitteeId}
             emptyLabel="Select committee"
           />
-          <TouchButton className="w-full" onClick={createReferral}>
-            Send referral
-          </TouchButton>
+          <div className="flex flex-wrap justify-end gap-2">
+            <TouchButton
+              variant="secondary"
+              onClick={() => {
+                resetForm();
+                setReferralOpen(false);
+              }}
+            >
+              Cancel
+            </TouchButton>
+            <TouchButton onClick={createReferral}>
+              Send referral
+            </TouchButton>
+          </div>
+        </section>
+      )}
+
+      {assignments.length === 0 ? (
+        <div className="rounded-xl border border-charcoal/10 bg-white px-4 py-6 text-center text-sm text-muted">
+          No assignments for this committee.
         </div>
-      </BottomSheet>
+      ) : (
+        <ul className="space-y-1.5">
+          {assignments.map((a) => (
+            <li key={a.id}>
+              <Link
+                href={`/assignments/${a.id}${a.status === "ASSIGNED" && canInbox ? "?action=receive" : ""}`}
+                className="block rounded-xl border border-charcoal/10 bg-white px-3 py-2.5 hover:border-primary/30"
+              >
+                <p className="font-semibold text-charcoal text-sm">{a.title}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {a.source === "SUPERVISORY" ? "Supervisory" : "Referral"} · From{" "}
+                  {a.createdBy.name} ·{" "}
+                  {
+                    ASSIGNMENT_STATUS_LABELS[
+                      a.status as keyof typeof ASSIGNMENT_STATUS_LABELS
+                    ]
+                  }
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

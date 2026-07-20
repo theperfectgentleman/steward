@@ -232,8 +232,8 @@ export function buildCommitteeDashboardStats({
       value: pendingAssignments,
       hint:
         pendingAssignments > 0
-          ? "Accept or decline in inbox"
-          : "Inbox is clear",
+          ? "Receive assignments that need action"
+          : "No pending assignments",
       href:
         pendingAssignments > 0
           ? committeePath(committeeId, "assignments")

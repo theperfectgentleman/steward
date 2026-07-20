@@ -15,13 +15,13 @@ function LegacyMinutesRedirect() {
       localStorage.getItem("unitycommit-committee") ??
       user?.committeeIds[0];
     if (last) {
-      router.replace(committeePath(last, "minutes"));
+      router.replace(committeePath(last, "schedule"));
     } else {
-      router.replace("/");
+      router.replace("/schedule");
     }
   }, [router, user]);
 
-  return <p className="text-muted text-center py-12">Redirecting…</p>;
+  return <p className="text-muted text-center py-12">Redirecting to schedule…</p>;
 }
 
 export default function MinutesPage() {

@@ -9,75 +9,36 @@ import {
 } from "@/lib/navigation";
 
 const TABS = [
-  { key: "overview", label: "Overview", section: undefined },
-  { key: "tasks", label: "Board", section: "tasks" as const },
+  { key: "tasks", label: "Task Board", section: "tasks" as const },
   { key: "projects", label: "Projects", section: "projects" as const },
+  { key: "assignments", label: "Assignments", section: "assignments" as const },
   { key: "schedule", label: "Schedule", section: "schedule" as const },
-  { key: "minutes", label: "Minutes", section: "minutes" as const },
+  { key: "documents", label: "Documents", section: "documents" as const },
 ];
 
-export function CommitteeWorkspaceTabs({
-  variant = "page",
-}: {
-  variant?: "page" | "header";
-}) {
+export function CommitteeWorkspaceTabs() {
   const pathname = usePathname();
   const committeeId = parseCommitteeId(pathname);
   if (!committeeId) return null;
 
   const current = parseCommitteeSection(pathname);
 
-  if (variant === "header") {
-    return (
-      <nav
-        className="flex gap-1 overflow-x-auto px-4 lg:px-6 border-t border-charcoal/6"
-        aria-label="Committee sections"
-      >
-        {TABS.map((tab) => {
-          const href = tab.section
-            ? committeePath(committeeId, tab.section)
-            : committeePath(committeeId);
-          const active =
-            current === tab.key ||
-            (tab.key === "overview" && current === "overview");
-          return (
-            <Link
-              key={tab.key}
-              href={href}
-              className={`shrink-0 px-3 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                active
-                  ? "border-primary text-charcoal"
-                  : "border-transparent text-muted hover:text-charcoal hover:border-charcoal/15"
-              }`}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
-    );
-  }
-
   return (
     <nav
-      className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1"
+      className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-charcoal/[0.04] p-1"
       aria-label="Committee sections"
     >
       {TABS.map((tab) => {
-        const href = tab.section
-          ? committeePath(committeeId, tab.section)
-          : committeePath(committeeId);
-        const active =
-          current === tab.key ||
-          (tab.key === "overview" && current === "overview");
+        const href = committeePath(committeeId, tab.section);
+        const active = current === tab.key;
         return (
           <Link
             key={tab.key}
             href={href}
-            className={`shrink-0 touch-target px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-colors ${
+            className={`relative shrink-0 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
               active
-                ? "bg-primary border-primary text-white"
-                : "bg-white border-charcoal/10 text-muted hover:border-charcoal/20"
+                ? "bg-primary text-white shadow-xs"
+                : "text-muted hover:bg-white hover:text-charcoal"
             }`}
           >
             {tab.label}

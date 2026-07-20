@@ -41,7 +41,7 @@ export function FeedbackSubmitSheet({
 
   useEffect(() => {
     if (!user) return;
-    const scope = user.role === "SUPER_ADMIN" || user.role === "CHURCH_EXECUTIVE"
+    const scope = user.role === "ORG_ADMIN" || user.role === "ORG_PARTICIPANT"
       ? "all"
       : user.id;
     fetch(`/api/committees?scope=${scope}`)

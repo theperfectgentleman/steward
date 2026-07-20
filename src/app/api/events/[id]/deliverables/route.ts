@@ -5,6 +5,7 @@ import {
   asPermissionUser,
   requireUser,
 } from "@/lib/auth";
+import { requireEventCommitteeId } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
 import { canEditTasks } from "@/lib/types";
 
@@ -21,7 +22,10 @@ export async function GET(
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const missing = requireEventCommitteeId(event.committeeId);
+  if (missing) return missing;
+
+  const access = assertCommitteeAccess(auth.user, event.committeeId!);
   if (access) return access;
 
   const deliverables = await prisma.eventDeliverable.findMany({
@@ -46,15 +50,18 @@ export async function POST(
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const missing = requireEventCommitteeId(event.committeeId);
+  if (missing) return missing;
+
+  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId)) {
+  if (!canEditTasks(perm, event.committeeId!)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertCommitteeAccess(auth.user, event.committeeId!);
   if (access) return access;
 
   const body = (await request.json()) as {
@@ -102,15 +109,18 @@ export async function DELETE(
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const missing = requireEventCommitteeId(event.committeeId);
+  if (missing) return missing;
+
+  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId)) {
+  if (!canEditTasks(perm, event.committeeId!)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertCommitteeAccess(auth.user, event.committeeId!);
   if (access) return access;
 
   const { searchParams } = new URL(request.url);

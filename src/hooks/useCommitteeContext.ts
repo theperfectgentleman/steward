@@ -21,7 +21,7 @@ export function useCommitteeContext() {
 
     setLoading(true);
     const scope =
-      user.role === "SUPER_ADMIN" || user.role === "CHURCH_EXECUTIVE"
+      user.role === "ORG_ADMIN" || user.role === "ORG_PARTICIPANT"
         ? "all"
         : user.id;
 

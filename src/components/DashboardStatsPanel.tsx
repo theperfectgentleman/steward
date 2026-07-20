@@ -24,13 +24,15 @@ export function DashboardStatGrid({
 
   const gridClass =
     size === "compact"
-      ? "grid grid-cols-2 gap-3"
-      : "grid grid-cols-2 gap-3 lg:grid-cols-3";
+      ? "grid grid-cols-2 gap-2"
+      : stats.length >= 3
+        ? "grid grid-cols-1 gap-2 sm:grid-cols-3"
+        : "grid grid-cols-2 gap-2";
 
   return (
     <div className={gridClass}>
       {stats.map(({ key, ...stat }) => (
-        <StatCard key={key} {...stat} />
+        <StatCard key={key} {...stat} size={size} />
       ))}
     </div>
   );
@@ -43,7 +45,8 @@ function StatCard({
   href,
   accent = "charcoal",
   active = false,
-}: DashboardStat) {
+  size = "default",
+}: DashboardStat & { size?: "default" | "compact" }) {
   const accentStyles = {
     lime: active
       ? "border-l-primary bg-white"
@@ -60,25 +63,28 @@ function StatCard({
     charcoal: "text-charcoal-muted",
   };
 
+  const valueClass =
+    size === "compact"
+      ? "mt-0.5 text-xl font-bold tracking-tight text-charcoal tabular-nums"
+      : "mt-0.5 text-2xl font-bold tracking-tight text-charcoal tabular-nums";
+
   const inner = (
     <>
       <p
-        className={`text-xs font-bold uppercase tracking-wider ${labelStyles[accent]}`}
+        className={`text-[11px] font-bold uppercase tracking-wider ${labelStyles[accent]}`}
       >
         {label}
       </p>
-      <p className="mt-1 text-3xl font-extrabold tracking-tight text-charcoal">
-        {value}
-      </p>
+      <p className={valueClass}>{value}</p>
       {hint && (
-        <p className="mt-1.5 text-xs font-medium text-muted">{hint}</p>
+        <p className="mt-0.5 text-xs font-medium text-muted leading-snug">{hint}</p>
       )}
     </>
   );
 
-  const className = `block rounded-2xl border border-charcoal/8 border-l-4 p-5 shadow-xs transition-all ${accentStyles[accent]} ${
+  const className = `block rounded-xl border border-charcoal/8 border-l-4 px-3 py-2.5 shadow-xs transition-all ${accentStyles[accent]} ${
     href
-      ? "cursor-pointer hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+      ? "cursor-pointer hover:border-primary/30 hover:shadow-sm"
       : ""
   }`;
 
@@ -110,10 +116,10 @@ export function DashboardStatsPanel({
   }, 0);
 
   return (
-    <div className="space-y-5">
-      <section className="space-y-3">
+    <div className="space-y-3">
+      <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-accent">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-accent">
             {attentionTitle}
           </h2>
           {attentionTotal === 0 && (
@@ -121,7 +127,7 @@ export function DashboardStatsPanel({
           )}
         </div>
         {attention.length === 0 ? (
-          <p className="text-sm text-muted rounded-xl border border-charcoal/8 bg-surface/50 px-4 py-3">
+          <p className="text-sm text-muted rounded-lg border border-charcoal/8 bg-surface/50 px-3 py-2">
             Nothing needs your sign-off right now. Check the snapshot below for
             church-wide progress.
           </p>
@@ -131,8 +137,8 @@ export function DashboardStatsPanel({
       </section>
 
       {snapshot.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-charcoal-muted">
+        <section className="space-y-2">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-charcoal-muted">
             {snapshotTitle}
           </h2>
           <DashboardStatGrid stats={snapshot} />

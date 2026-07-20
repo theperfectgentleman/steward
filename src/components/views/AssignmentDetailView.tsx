@@ -42,9 +42,11 @@ type AssignmentDetail = {
   dueDate: string | null;
   returnComment: string | null;
   createdBy: { id: string; name: string };
-  targetCommittee: { id: string; name: string; charterLetter: string };
+  targetCommittee: { id: string; name: string; charterLetter: string } | null;
+  assignee?: { id: string; name: string } | null;
+  accountableOwner?: { id: string; name: string } | null;
   sourceCommittee: { id: string; name: string } | null;
-  project: { id: string; title: string; tasks?: unknown[] } | null;
+  projects: { id: string; title: string; status?: string; tasks?: unknown[] }[];
   rootTask: { id: string; title: string } | null;
 };
 
@@ -73,7 +75,9 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
 
   const [assignment, setAssignment] = useState<AssignmentDetail | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
-  const [convertOpen, setConvertOpen] = useState(actionParam === "accept");
+  const [createProjectOpen, setCreateProjectOpen] = useState(
+    actionParam === "create-project",
+  );
   const [returnOpen, setReturnOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -91,6 +95,11 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
   const [transferUserId, setTransferUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const [scopeSuggestion, setScopeSuggestion] = useState("");
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [scopeError, setScopeError] = useState("");
 
   const load = useCallback(() => {
     fetch(`/api/assignments/${assignmentId}`)
@@ -103,7 +112,10 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
       })
       .then((data) => {
         if (!data) return;
-        setAssignment(data.assignment);
+        setAssignment({
+          ...data.assignment,
+          projects: data.assignment?.projects ?? [],
+        });
         setActivity(data.activity ?? []);
         setConvertTitle(data.assignment?.title ?? "");
         setEditTitle(data.assignment?.title ?? "");
@@ -124,11 +136,45 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
   }, [load]);
 
   useEffect(() => {
-    if (actionParam === "accept") setConvertOpen(true);
-    if (actionParam === "close" && assignment?.status === "CHAIR_APPROVED") {
-      // sticky close button already shown
+    if (
+      actionParam === "create-project" &&
+      assignment &&
+      ["ACCEPTED", "IN_PROGRESS", "RETURNED"].includes(assignment.status)
+    ) {
+      setCreateProjectOpen(true);
     }
-  }, [actionParam, assignment?.status]);
+  }, [actionParam, assignment]);
+
+  useEffect(() => {
+    if (actionParam !== "receive" || !assignment || !user) return;
+    if (assignment.status !== "ASSIGNED" || receiving) return;
+    if (
+      !assignment.targetCommittee?.id ||
+      !canAcceptAssignments(toPermissionUser(user), assignment.targetCommittee.id)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setReceiving(true);
+    void (async () => {
+      await fetch("/api/assignments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: assignmentId, action: "accept" }),
+      });
+      if (cancelled) return;
+      load();
+      refreshAttention();
+      setReceiving(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Only auto-receive once when landing with ?action=receive
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionParam, assignment?.id, assignment?.status]);
 
   if (!user) return null;
   const perm = toPermissionUser(user);
@@ -141,6 +187,32 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
     });
     load();
     refreshAttention();
+  };
+
+  const suggestScope = async () => {
+    setScopeLoading(true);
+    setScopeError("");
+    try {
+      const res = await fetch("/api/ai/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "assignment_scope",
+          assignmentId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setScopeError(data.error ?? "Could not suggest scope");
+        return;
+      }
+      setScopeSuggestion(data.suggestion ?? "");
+      setScopeOpen(true);
+    } catch {
+      setScopeError("Network error");
+    } finally {
+      setScopeLoading(false);
+    }
   };
 
   const loadPickers = async () => {
@@ -167,11 +239,16 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
   }
 
   if (!assignment) {
-    return <p className="text-muted text-center py-12">Assignment not found.</p>;
+    return <p className="text-muted text-center py-6">Assignment not found.</p>;
   }
 
-  const canAccept = canAcceptAssignments(perm, assignment.targetCommittee.id);
-  const canApprove = canApproveAssignmentReview(perm, assignment.targetCommittee.id);
+  const projects = assignment.projects ?? [];
+  const canAccept = assignment.targetCommittee?.id
+    ? canAcceptAssignments(perm, assignment.targetCommittee.id)
+    : assignment.assignee?.id === user.id;
+  const canApprove = assignment.targetCommittee?.id
+    ? canApproveAssignmentReview(perm, assignment.targetCommittee.id)
+    : false;
   const canClose = canCloseAssignment(perm, assignment.createdBy.id);
   const isPresbytery = canCreatePresbyteryAssignment(perm);
   const canManage =
@@ -185,15 +262,36 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
     ["ASSIGNED", "ACCEPTED"].includes(assignment.status) &&
     (canClose || isPresbyteryHead(perm));
   const canTransfer = isPresbyteryHead(perm) || isSuperAdmin(perm.role);
+  const canCreateProject =
+    canAccept &&
+    ["ACCEPTED", "IN_PROGRESS", "RETURNED"].includes(assignment.status);
 
   const primaryActions = (
     <>
       {assignment.status === "ASSIGNED" && canAccept && (
-        <TouchButton onClick={() => setConvertOpen(true)}>Accept</TouchButton>
+        <TouchButton
+          disabled={receiving}
+          onClick={async () => {
+            setReceiving(true);
+            await patch({ action: "accept" });
+            setReceiving(false);
+          }}
+        >
+          {receiving ? "Receiving…" : "Receive"}
+        </TouchButton>
+      )}
+      {canCreateProject && (
+        <TouchButton onClick={() => setCreateProjectOpen(true)}>
+          {projects.length === 0 ? "Create project" : "Create another project"}
+        </TouchButton>
       )}
       {["ACCEPTED", "IN_PROGRESS", "RETURNED"].includes(assignment.status) &&
-        canAccept && (
-          <TouchButton onClick={() => patch({ action: "submit_review" })}>
+        canAccept &&
+        projects.length > 0 && (
+          <TouchButton
+            variant="secondary"
+            onClick={() => patch({ action: "submit_review" })}
+          >
             Submit for review
           </TouchButton>
         )}
@@ -224,20 +322,27 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
           Manage
         </TouchButton>
       )}
+      <TouchButton
+        variant="ghost"
+        disabled={scopeLoading}
+        onClick={suggestScope}
+      >
+        {scopeLoading ? "Suggesting…" : "Suggest scope"}
+      </TouchButton>
     </>
   );
 
   return (
-    <div className="space-y-6 pb-28 lg:pb-8">
-      <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-8">
-        <div className="space-y-6">
+    <div className="space-y-4 pb-28 lg:pb-8">
+      <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-4">
+        <div className="space-y-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-accent">
-              {assignment.source === "PRESBYTERY"
+              {assignment.source === "SUPERVISORY"
                 ? "Presbytery Assignment"
                 : "Committee Referral"}
             </p>
-            <h1 className="text-2xl font-bold text-charcoal mt-1">{assignment.title}</h1>
+            <h1 className="text-xl font-bold text-charcoal mt-1">{assignment.title}</h1>
             <div className="mt-2">
               <CopyLinkButton path={assignmentPath(assignmentId)} />
             </div>
@@ -248,12 +353,18 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
                   assignment.priority as keyof typeof ASSIGNMENT_PRIORITY_LABELS
                 ]
               }{" "}
-              · {assignment.targetCommittee.name}
+              ·{" "}
+              {assignment.targetCommittee?.name ??
+                assignment.assignee?.name ??
+                "Personal"}
               {assignment.dueDate &&
                 ` · Due ${formatDate(assignment.dueDate)}`}
             </p>
             {assignment.description && (
               <RichTextContent html={assignment.description} className="mt-4" />
+            )}
+            {scopeError && (
+              <p className="text-sm text-accent mt-2">{scopeError}</p>
             )}
             {assignment.returnComment && (
               <p className="text-sm text-accent mt-3 rounded-xl bg-accent/5 p-3">
@@ -264,25 +375,62 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
 
           <div className="hidden lg:flex flex-wrap gap-2">{primaryActions}</div>
 
-          {(assignment.project || assignment.rootTask) && (
+          {assignment.status === "ACCEPTED" && projects.length === 0 && (
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm font-medium text-charcoal">
+                Received — create a project to start work
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                An assignment can spin off one or more projects. Tasks live on
+                those projects.
+              </p>
+              {canCreateProject && (
+                <TouchButton
+                  className="mt-3"
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  Create project
+                </TouchButton>
+              )}
+            </div>
+          )}
+
+          {(projects.length > 0 || assignment.rootTask) && (
             <div className="rounded-2xl border border-charcoal/10 bg-white p-4 space-y-2">
-              <h2 className="font-semibold text-charcoal">Linked work</h2>
-              {assignment.project && (
-                <Link
-                  href={projectPath(assignment.targetCommittee.id, assignment.project.id)}
-                  className="text-primary font-medium"
-                >
-                  Project: {assignment.project.title}
-                </Link>
+              <h2 className="font-semibold text-charcoal">Linked projects</h2>
+              {projects.length === 0 ? (
+                <p className="text-sm text-muted">No projects yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {projects.map((p) => (
+                    <li key={p.id}>
+                      {assignment.targetCommittee?.id ? (
+                        <Link
+                          href={projectPath(assignment.targetCommittee.id, p.id)}
+                          className="font-medium text-primary"
+                        >
+                          {p.title}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-charcoal">{p.title}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
-              {assignment.rootTask && (
-                <Link
-                  href={`${committeePath(assignment.targetCommittee.id, "tasks")}?task=${assignment.rootTask.id}`}
-                  className="text-primary font-medium block"
-                >
-                  Task: {assignment.rootTask.title}
-                </Link>
-              )}
+              {assignment.rootTask &&
+                (assignment.targetCommittee?.id ? (
+                  <Link
+                    href={`${committeePath(assignment.targetCommittee.id, "tasks")}?task=${assignment.rootTask.id}`}
+                    className="block font-medium text-primary"
+                  >
+                    Task: {assignment.rootTask.title}
+                  </Link>
+                ) : (
+                  <p className="font-medium text-charcoal">
+                    Task: {assignment.rootTask.title}
+                  </p>
+                ))}
             </div>
           )}
 
@@ -331,19 +479,20 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
       </div>
 
       <BottomSheet
-        open={convertOpen}
-        onClose={() => setConvertOpen(false)}
-        title="Convert assignment"
+        open={createProjectOpen}
+        onClose={() => setCreateProjectOpen(false)}
+        title="Create project"
       >
         <div className="space-y-4 p-1">
           <p className="text-sm text-muted">
-            Accept this assignment and convert it into committee work.
+            Capture this assignment as a project. You can create more projects
+            later if the work needs to split.
           </p>
           <input
             value={convertTitle}
             onChange={(e) => setConvertTitle(e.target.value)}
             className={FORM_FIELD_CLASS}
-            placeholder="Title"
+            placeholder="Project title"
           />
           <TouchButton
             className="w-full"
@@ -353,24 +502,10 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
                 convertType: "project",
                 convertTitle: convertTitle.trim() || assignment.title,
               });
-              setConvertOpen(false);
+              setCreateProjectOpen(false);
             }}
           >
-            Create as project
-          </TouchButton>
-          <TouchButton
-            variant="secondary"
-            className="w-full"
-            onClick={async () => {
-              await patch({
-                action: "convert",
-                convertType: "task",
-                convertTitle: convertTitle.trim() || assignment.title,
-              });
-              setConvertOpen(false);
-            }}
-          >
-            Create as task
+            Create project
           </TouchButton>
         </div>
       </BottomSheet>
@@ -542,6 +677,31 @@ export function AssignmentDetailView({ assignmentId }: { assignmentId: string })
             }}
           >
             Transfer
+          </TouchButton>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet
+        open={scopeOpen}
+        onClose={() => setScopeOpen(false)}
+        title="Suggested scope"
+        size="lg"
+      >
+        <div className="space-y-4 p-1">
+          <p className="text-sm text-muted">
+            AI suggestion only — copy what you need. Nothing is saved automatically.
+          </p>
+          <p className="text-sm text-charcoal whitespace-pre-wrap leading-relaxed rounded-xl border border-charcoal/10 bg-white p-4">
+            {scopeSuggestion}
+          </p>
+          <TouchButton
+            className="w-full"
+            variant="secondary"
+            onClick={() => {
+              void navigator.clipboard?.writeText(scopeSuggestion);
+            }}
+          >
+            Copy to clipboard
           </TouchButton>
         </div>
       </BottomSheet>

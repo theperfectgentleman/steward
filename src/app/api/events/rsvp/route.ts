@@ -4,6 +4,7 @@ import {
   asPermissionUser,
   requireUser,
 } from "@/lib/auth";
+import { requireEventCommitteeId } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
 import { canRsvp } from "@/lib/types";
 
@@ -30,7 +31,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const missing = requireEventCommitteeId(event.committeeId);
+  if (missing) return missing;
+
+  const access = assertCommitteeAccess(auth.user, event.committeeId!);
   if (access) return access;
 
   const rsvp = await prisma.eventRsvp.upsert({

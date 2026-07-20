@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { asPermissionUser, requireRoles } from "@/lib/auth";
+import { asPermissionUser, requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canManagePresbyteryRoster } from "@/lib/types";
+import { canManageSupervisoryRoster } from "@/lib/types";
 
-export async function GET() {
-  const auth = await requireRoles(["SUPER_ADMIN", "SYSTEM_ADMIN", "CHURCH_EXECUTIVE"]);
-  if (auth.error) return auth.error;
-
-  let group = await prisma.presbyteryGroup.findFirst({
+async function getOrCreateGroup(organizationId: string, label: string) {
+  let group = await prisma.supervisoryGroup.findFirst({
+    where: { organizationId },
     include: {
       members: {
         include: {
@@ -21,8 +19,8 @@ export async function GET() {
   });
 
   if (!group) {
-    group = await prisma.presbyteryGroup.create({
-      data: { name: "Presbytery" },
+    group = await prisma.supervisoryGroup.create({
+      data: { name: label, organizationId },
       include: {
         members: {
           include: {
@@ -35,17 +33,32 @@ export async function GET() {
     });
   }
 
+  return group;
+}
+
+export async function GET() {
+  const auth = await requireActiveOrg();
+  if (auth.error) return auth.error;
+
+  const group = await getOrCreateGroup(
+    auth.org.organizationId,
+    auth.org.settings.supervisoryLabel,
+  );
   return NextResponse.json(group);
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRoles(["SUPER_ADMIN", "SYSTEM_ADMIN"]);
+  const auth = await requireRoles(["ORG_ADMIN", "ORG_TECH"]);
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
-  if (!canManagePresbyteryRoster(perm.role)) {
+  if (!canManageSupervisoryRoster(perm)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
+
+  const orgId = auth.user.orgContext!.organizationId;
+  const label =
+    auth.user.orgContext!.settings.supervisoryLabel || "Supervisory Group";
 
   const body = (await request.json()) as {
     userId?: string;
@@ -53,22 +66,21 @@ export async function POST(request: Request) {
     action?: "add" | "remove" | "set_head";
   };
 
-  let group = await prisma.presbyteryGroup.findFirst();
-  if (!group) {
-    group = await prisma.presbyteryGroup.create({ data: { name: "Presbytery" } });
-  }
+  const group = await getOrCreateGroup(orgId, label);
 
   if (body.action === "remove" && body.userId) {
-    await prisma.presbyteryMember.deleteMany({ where: { userId: body.userId } });
+    await prisma.supervisoryMember.deleteMany({
+      where: { userId: body.userId, groupId: group.id },
+    });
     return NextResponse.json({ ok: true });
   }
 
   if (body.action === "set_head" && body.userId) {
-    await prisma.presbyteryMember.updateMany({
+    await prisma.supervisoryMember.updateMany({
       where: { groupId: group.id },
       data: { isHead: false },
     });
-    await prisma.presbyteryMember.updateMany({
+    await prisma.supervisoryMember.updateMany({
       where: { userId: body.userId, groupId: group.id },
       data: { isHead: true },
     });
@@ -79,13 +91,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
 
-  await prisma.user.update({
-    where: { id: body.userId },
-    data: { role: "CHURCH_EXECUTIVE" },
-  });
-
-  await prisma.presbyteryMember.upsert({
-    where: { userId: body.userId },
+  await prisma.supervisoryMember.upsert({
+    where: {
+      userId_groupId: { userId: body.userId, groupId: group.id },
+    },
     create: {
       userId: body.userId,
       groupId: group.id,

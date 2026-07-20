@@ -1,8 +1,13 @@
 # Product Requirement Document (PRD)
 ## Project Name: UnityCommit (Unified Church Committee Workspace)
-**Document Version:** 1.0.0
-**Target Release:** Q4 2026
+
+> **Superseded for product direction.** Steward’s canonical vision, naming, multi-tenant model, and upgrade phases live in **[docs/PRODUCT.md](docs/PRODUCT.md)**.  
+> This PRD is retained as **historical / Template A** context (the church demo that will migrate to organization **ICGC**). UX and touch-target rules below remain useful reference; do not treat the church-only domain model or “Super Admin” naming here as current product law.
+
+**Document Version:** 1.0.0  
+**Target Release:** Q4 2026  
 **Author:** Lead IT Committee Systems Architect
+
 ## 1. Executive Summary & Core Objectives
 ### 1.1 Problem Statement
 The church operates with 19 distinct, highly specialized committees (including Finance, Missions, Estates & Projects, and Disciplinary). Currently, communication, goal tracking, scheduling, and task management happen in silos—using a mix of paper, group chats, personal spreadsheets, and disparate calendar apps. This leaves the General Overseer, Presbytery, and senior church hierarchy without a real-time, consolidated view of progress, while administrative volunteers are bogged down by complex or inaccessible desktop-first interfaces.

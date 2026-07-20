@@ -5,6 +5,7 @@ import {
   asPermissionUser,
   requireUser,
 } from "@/lib/auth";
+import { requireEventCommitteeId } from "@/lib/event-access";
 import { getEventWithProgress } from "@/lib/event-queries";
 import { prisma } from "@/lib/prisma";
 import { canEditTasks } from "@/lib/types";
@@ -22,15 +23,18 @@ export async function POST(
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const missing = requireEventCommitteeId(event.committeeId);
+  if (missing) return missing;
+
+  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId)) {
+  if (!canEditTasks(perm, event.committeeId!)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertCommitteeAccess(auth.user, event.committeeId!);
   if (access) return access;
 
   const body = (await request.json()) as {
@@ -45,7 +49,7 @@ export async function POST(
     data: body.tasks.map((t) => ({
       title: t.title.trim(),
       description: t.description?.trim() || null,
-      committeeId: event.committeeId,
+      committeeId: event.committeeId!,
       eventId,
       assignedToId: t.assignedToId || null,
       createdById: auth.user.id,

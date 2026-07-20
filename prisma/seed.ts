@@ -4,6 +4,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { Pool } from "pg";
 import { COMMITTEE_CHARTER } from "../src/lib/committees";
 import { hashPassword } from "../src/lib/password";
+import { CHURCH_APPROVAL_STACK } from "../src/lib/types";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -20,14 +21,14 @@ type SeedUser = {
   name: string;
   email: string;
   phone: string;
-  role:
-    | "SUPER_ADMIN"
-    | "SYSTEM_ADMIN"
-    | "CHURCH_EXECUTIVE"
-    | "COMMITTEE_PARTICIPANT";
-  presbyteryHead?: boolean;
-  presbyteryMember?: boolean;
+  role: "ORG_ADMIN" | "ORG_TECH" | "ORG_PARTICIPANT";
+  supervisoryHead?: boolean;
+  supervisorySecretary?: boolean;
+  supervisoryMember?: boolean;
 };
+
+const ICGC_ORG_ID = "org_icgc_demo";
+const ICGC_SLUG = "icgc";
 
 const SEED_USERS: SeedUser[] = [
   {
@@ -35,51 +36,59 @@ const SEED_USERS: SeedUser[] = [
     name: "Joseph Osei",
     email: "admin@unitycommit.org",
     phone: "+233 24 000 0001",
-    role: "SUPER_ADMIN",
+    role: "ORG_ADMIN",
   },
   {
     key: "systemAdmin",
     name: "IT Systems Admin",
     email: "it@unitycommit.org",
     phone: "+233 24 000 0006",
-    role: "SYSTEM_ADMIN",
+    role: "ORG_TECH",
   },
   {
     key: "executive",
     name: "Rev. General Overseer",
     email: "overseer@unitycommit.org",
     phone: "+233 24 000 0002",
-    role: "CHURCH_EXECUTIVE",
-    presbyteryHead: true,
+    role: "ORG_PARTICIPANT",
+    supervisoryHead: true,
   },
   {
-    key: "presbyteryMember",
+    key: "generalSecretary",
+    name: "Rev. General Secretary",
+    email: "gs@unitycommit.org",
+    phone: "+233 24 000 0008",
+    role: "ORG_PARTICIPANT",
+    supervisorySecretary: true,
+  },
+  {
+    key: "supervisoryMember",
     name: "Elder Kwame Asante",
     email: "kwame@unitycommit.org",
     phone: "+233 24 000 0007",
-    role: "CHURCH_EXECUTIVE",
-    presbyteryMember: true,
+    role: "ORG_PARTICIPANT",
+    supervisoryMember: true,
   },
   {
     key: "chair",
     name: "Grace Mensah",
     email: "grace@unitycommit.org",
     phone: "+233 24 000 0003",
-    role: "COMMITTEE_PARTICIPANT",
+    role: "ORG_PARTICIPANT",
   },
   {
     key: "secretary",
     name: "James Osei",
     email: "james@unitycommit.org",
     phone: "+233 24 000 0004",
-    role: "COMMITTEE_PARTICIPANT",
+    role: "ORG_PARTICIPANT",
   },
   {
     key: "member",
     name: "Ama Boateng",
     email: "ama@unitycommit.org",
     phone: "+233 24 000 0005",
-    role: "COMMITTEE_PARTICIPANT",
+    role: "ORG_PARTICIPANT",
   },
 ];
 
@@ -90,9 +99,14 @@ function committeeBudget(letter: string) {
 async function resetDatabase() {
   await prisma.otpChallenge.deleteMany();
   await prisma.invite.deleteMany();
+  await prisma.message.deleteMany();
+  await prisma.messageParticipant.deleteMany();
+  await prisma.messageThread.deleteMany();
+  await prisma.agendaItem.deleteMany();
   await prisma.activityLog.deleteMany();
   await prisma.document.deleteMany();
   await prisma.comment.deleteMany();
+  await prisma.report.deleteMany();
   await prisma.attendance.deleteMany();
   await prisma.minutePoint.deleteMany();
   await prisma.meeting.deleteMany();
@@ -104,29 +118,117 @@ async function resetDatabase() {
   await prisma.timelineGoal.deleteMany();
   await prisma.event.deleteMany();
   await prisma.committeeFeedback.deleteMany();
+  await prisma.libraryDocument.deleteMany();
   await prisma.committeeMember.deleteMany();
-  await prisma.presbyteryMember.deleteMany();
-  await prisma.presbyteryGroup.deleteMany();
+  await prisma.supervisoryMember.deleteMany();
+  await prisma.supervisoryGroup.deleteMany();
+  await prisma.roleTemplate.deleteMany();
+  await prisma.organizationMembership.deleteMany();
+  await prisma.organizationSettings.deleteMany();
+  await prisma.platformAdmin.deleteMany();
   await prisma.user.deleteMany();
   await prisma.committee.deleteMany();
+  await prisma.organization.deleteMany();
 }
 
-async function ensureCommittees() {
-  const committees = [];
-  for (const c of COMMITTEE_CHARTER) {
-    const committee = await prisma.committee.upsert({
-      where: { charterLetter: c.letter },
+async function ensureIcgOrg() {
+  const org = await prisma.organization.upsert({
+    where: { slug: ICGC_SLUG },
+    create: {
+      id: ICGC_ORG_ID,
+      name: "ICGC",
+      slug: ICGC_SLUG,
+      status: "ACTIVE",
+      settings: {
+        create: {
+          supervisoryLabel: "Presbytery",
+          committeeLabel: "Committee",
+          committeeBudgetsEnabled: false,
+          allowCrossCommitteeRead: false,
+          requireOversightOnSelfInitiated: true,
+          allowSupervisoryAssignMembers: true,
+          approvalStack: CHURCH_APPROVAL_STACK,
+        },
+      },
+    },
+    update: { name: "ICGC", status: "ACTIVE" },
+  });
+
+  await prisma.organizationSettings.upsert({
+    where: { organizationId: org.id },
+    create: {
+      organizationId: org.id,
+      supervisoryLabel: "Presbytery",
+      committeeLabel: "Committee",
+      approvalStack: CHURCH_APPROVAL_STACK,
+    },
+    update: {
+      supervisoryLabel: "Presbytery",
+      committeeLabel: "Committee",
+      approvalStack: CHURCH_APPROVAL_STACK,
+    },
+  });
+
+  const templates = [
+    { key: "CHAIR", name: "Chair", sortOrder: 1 },
+    { key: "DEPUTY", name: "Deputy", sortOrder: 2 },
+    { key: "SECRETARY", name: "Secretary", sortOrder: 3 },
+    { key: "MEMBER", name: "Member", sortOrder: 4 },
+    {
+      key: "SUPERVISORY_HEAD",
+      name: "General Overseer",
+      sortOrder: 10,
+    },
+    {
+      key: "SUPERVISORY_SECRETARY",
+      name: "General Secretary",
+      sortOrder: 11,
+    },
+  ];
+  for (const t of templates) {
+    await prisma.roleTemplate.upsert({
+      where: {
+        organizationId_key: { organizationId: org.id, key: t.key },
+      },
       create: {
+        organizationId: org.id,
+        key: t.key,
+        name: t.name,
+        sortOrder: t.sortOrder,
+        capabilities: {},
+      },
+      update: { name: t.name, sortOrder: t.sortOrder },
+    });
+  }
+
+  return org;
+}
+
+async function ensureCommittees(organizationId: string) {
+  const committees = [];
+  for (let i = 0; i < COMMITTEE_CHARTER.length; i++) {
+    const c = COMMITTEE_CHARTER[i];
+    const committee = await prisma.committee.upsert({
+      where: {
+        organizationId_charterLetter: {
+          organizationId,
+          charterLetter: c.letter,
+        },
+      },
+      create: {
+        organizationId,
         charterLetter: c.letter,
         name: c.name,
         description: `${c.name} — church charter committee ${c.letter.toUpperCase()}`,
         budget: committeeBudget(c.letter),
         reportingFrequency: "Monthly",
+        sortOrder: i,
       },
       update: {
         name: c.name,
         description: `${c.name} — church charter committee ${c.letter.toUpperCase()}`,
         reportingFrequency: "Monthly",
+        sortOrder: i,
       },
     });
     committees.push(committee);
@@ -134,20 +236,19 @@ async function ensureCommittees() {
   return committees;
 }
 
-async function ensureAppSettings() {
-  await prisma.appSettings.upsert({
-    where: { id: "default" },
-    create: { id: "default", committeeBudgetsEnabled: false },
-    update: {},
+async function ensureSupervisoryGroup(organizationId: string) {
+  const existing = await prisma.supervisoryGroup.findFirst({
+    where: { organizationId },
   });
-}
-
-async function ensurePresbyteryGroup() {
-  const existing = await prisma.presbyteryGroup.findFirst({
-    where: { name: "Presbytery" },
+  if (existing) {
+    return prisma.supervisoryGroup.update({
+      where: { id: existing.id },
+      data: { name: "Presbytery" },
+    });
+  }
+  return prisma.supervisoryGroup.create({
+    data: { name: "Presbytery", organizationId },
   });
-  if (existing) return existing;
-  return prisma.presbyteryGroup.create({ data: { name: "Presbytery" } });
 }
 
 async function ensureUser(
@@ -170,42 +271,62 @@ async function ensureUser(
       name: spec.name,
       phone: spec.phone,
       role: spec.role,
+      passwordHash,
+      status: "ACTIVE",
+      emailVerifiedAt: verifiedAt,
     },
   });
 
-  if (!user.passwordHash || user.status !== "ACTIVE") {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-        status: "ACTIVE",
-        emailVerifiedAt: user.emailVerifiedAt ?? verifiedAt,
-      },
-    });
-  }
-
-  return prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  return user;
 }
 
-async function ensurePresbyteryMembership(
+async function ensureOrgMembership(
+  organizationId: string,
+  userId: string,
+  role: "ORG_ADMIN" | "ORG_TECH" | "ORG_PARTICIPANT",
+) {
+  await prisma.organizationMembership.upsert({
+    where: {
+      organizationId_userId: { organizationId, userId },
+    },
+    create: { organizationId, userId, role },
+    update: { role },
+  });
+}
+
+async function ensureSupervisoryMembership(
   userId: string,
   groupId: string,
-  isHead: boolean,
+  opts: {
+    isHead?: boolean;
+    title?: "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM";
+    customTitle?: string;
+    canViewAll?: boolean;
+    canApproveOptional?: boolean;
+  },
 ) {
-  const existing = await prisma.presbyteryMember.findUnique({
-    where: { userId },
-  });
-  if (existing) {
-    if (existing.isHead !== isHead || existing.groupId !== groupId) {
-      await prisma.presbyteryMember.update({
-        where: { userId },
-        data: { isHead, groupId },
-      });
-    }
-    return;
-  }
-  await prisma.presbyteryMember.create({
-    data: { userId, groupId, isHead },
+  const isHead = opts.isHead === true || opts.title === "HEAD";
+  const title = opts.title ?? (isHead ? "HEAD" : "MEMBER");
+  await prisma.supervisoryMember.upsert({
+    where: {
+      userId_groupId: { userId, groupId },
+    },
+    create: {
+      userId,
+      groupId,
+      isHead,
+      title,
+      customTitle: opts.customTitle,
+      canViewAll: opts.canViewAll ?? (isHead || title === "SECRETARY"),
+      canApproveOptional: opts.canApproveOptional ?? isHead,
+    },
+    update: {
+      isHead,
+      title,
+      customTitle: opts.customTitle,
+      canViewAll: opts.canViewAll ?? (isHead || title === "SECRETARY"),
+      canApproveOptional: opts.canApproveOptional ?? isHead,
+    },
   });
 }
 
@@ -423,12 +544,12 @@ async function ensureDemoContent(params: {
     tasks[spec.title] = existing;
   }
 
-  // 3. ASSIGNMENTS (PRESBYTERY & REFERRALS)
+  // 3. ASSIGNMENTS (SUPERVISORY & REFERRALS)
   const assignmentSpecs = [
     {
       title: "Quarterly Financial Stewardship Report",
       description: "Consolidate and prepare stewardship reports from Q2 for presbytery submission.",
-      source: "PRESBYTERY" as const,
+      source: "SUPERVISORY" as const,
       status: "IN_PROGRESS" as const,
       priority: "HIGH" as const,
       createdById: executiveId,
@@ -438,7 +559,7 @@ async function ensureDemoContent(params: {
     {
       title: "Annual budget review presentation",
       description: "Prepare consolidated budget summary for Presbytery quarterly review",
-      source: "PRESBYTERY" as const,
+      source: "SUPERVISORY" as const,
       status: "ACCEPTED" as const,
       priority: "HIGH" as const,
       createdById: executiveId,
@@ -448,7 +569,7 @@ async function ensureDemoContent(params: {
     {
       title: "Outreach Impact Assessment",
       description: "Document demographic reach and impact metrics of the previous rural outreach program.",
-      source: "PRESBYTERY" as const,
+      source: "SUPERVISORY" as const,
       status: "ASSIGNED" as const,
       priority: "NORMAL" as const,
       createdById: executiveId,
@@ -852,9 +973,9 @@ async function main() {
     await resetDatabase();
   }
 
-  const committees = await ensureCommittees();
-  await ensureAppSettings();
-  const presbyteryGroup = await ensurePresbyteryGroup();
+  const org = await ensureIcgOrg();
+  const committees = await ensureCommittees(org.id);
+  const supervisoryGroup = await ensureSupervisoryGroup(org.id);
   const verifiedAt = new Date();
   const passwordHash = await hashPassword(SEED_PASSWORD);
 
@@ -863,17 +984,38 @@ async function main() {
     const user = await ensureUser(spec, passwordHash, verifiedAt);
     users[spec.key] = { id: user.id, email: user.email };
 
-    if (spec.presbyteryHead || spec.presbyteryMember) {
-      await ensurePresbyteryMembership(
-        user.id,
-        presbyteryGroup.id,
-        spec.presbyteryHead === true,
-      );
+    await ensureOrgMembership(org.id, user.id, spec.role);
+
+    if (spec.supervisoryHead) {
+      await ensureSupervisoryMembership(user.id, supervisoryGroup.id, {
+        isHead: true,
+        title: "HEAD",
+        customTitle: "General Overseer",
+        canViewAll: true,
+        canApproveOptional: true,
+      });
+    } else if (spec.supervisorySecretary) {
+      await ensureSupervisoryMembership(user.id, supervisoryGroup.id, {
+        title: "SECRETARY",
+        customTitle: "General Secretary",
+        canViewAll: true,
+        canApproveOptional: false,
+      });
+    } else if (spec.supervisoryMember) {
+      await ensureSupervisoryMembership(user.id, supervisoryGroup.id, {
+        title: "MEMBER",
+      });
     }
   }
 
-  // Setup multiple memberships to show switching committees
-  const getComm = (letter: string) => committees.find((c) => c.charterLetter === letter)!;
+  await prisma.platformAdmin.upsert({
+    where: { userId: users.admin.id },
+    create: { userId: users.admin.id },
+    update: {},
+  });
+
+  const getComm = (letter: string) =>
+    committees.find((c) => c.charterLetter === letter)!;
   const estates = getComm("c");
   const media = getComm("e");
   const finance = getComm("a");
@@ -883,38 +1025,36 @@ async function main() {
   const itComm = getComm("f");
   const disciplinary = getComm("d");
 
-  // Grace Mensah (chair) memberships
   await ensureMembership(users.chair.id, estates.id, "CHAIR");
   await ensureMembership(users.chair.id, worship.id, "CHAIR");
   await ensureMembership(users.chair.id, media.id, "MEMBER");
   await ensureMembership(users.chair.id, finance.id, "MEMBER");
 
-  // James Osei (secretary) memberships
   await ensureMembership(users.secretary.id, estates.id, "SECRETARY");
   await ensureMembership(users.secretary.id, worship.id, "SECRETARY");
   await ensureMembership(users.secretary.id, itComm.id, "MEMBER");
   await ensureMembership(users.secretary.id, disciplinary.id, "MEMBER");
 
-  // Ama Boateng (member) memberships
   await ensureMembership(users.member.id, estates.id, "MEMBER");
-  await ensureMembership(users.member.id, missions.id, "CHAIR"); // Ama is Chair of Missions!
+  await ensureMembership(users.member.id, missions.id, "CHAIR");
   await ensureMembership(users.member.id, worship.id, "MEMBER");
   await ensureMembership(users.member.id, youth.id, "MEMBER");
 
   await ensureDemoContent({
     committees,
-    users
+    users,
   });
 
   console.log("Seed complete (idempotent):", {
     mode: RESET ? "reset" : "ensure",
+    organization: "ICGC",
     committees: committees.length,
     users: SEED_USERS.length,
-    password: `${SEED_PASSWORD} (set only when missing)`,
+    password: SEED_PASSWORD,
     login: Object.fromEntries(
       SEED_USERS.map((u) => [u.key, users[u.key].email]),
     ),
-    tip: "Run npm run db:seed:reset to wipe and reseed from scratch",
+    tip: "Login → pick ICGC. Platform Super: admin@unitycommit.org → /super",
   });
 }
 

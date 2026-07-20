@@ -41,6 +41,8 @@ export async function createMemberInvite(input: CreateInviteInput) {
   });
   if (!committee) throw new Error("Committee not found");
 
+  const organizationId = committee.organizationId;
+
   const existing = await prisma.user.findUnique({
     where: { email },
     include: { committeeMemberships: true },
@@ -49,6 +51,21 @@ export async function createMemberInvite(input: CreateInviteInput) {
   const loginUrl = absoluteUrl("/", input.origin);
 
   if (existing?.status === "ACTIVE" && existing.passwordHash) {
+    await prisma.organizationMembership.upsert({
+      where: {
+        organizationId_userId: {
+          organizationId,
+          userId: existing.id,
+        },
+      },
+      create: {
+        organizationId,
+        userId: existing.id,
+        role: "ORG_PARTICIPANT",
+      },
+      update: {},
+    });
+
     await prisma.committeeMember.upsert({
       where: {
         userId_committeeId: {
@@ -95,6 +112,12 @@ export async function createMemberInvite(input: CreateInviteInput) {
         email,
         phone,
         status: "PENDING",
+        organizationMemberships: {
+          create: {
+            organizationId,
+            role: "ORG_PARTICIPANT",
+          },
+        },
       },
     }));
 
@@ -105,6 +128,20 @@ export async function createMemberInvite(input: CreateInviteInput) {
         name: input.name.trim(),
         phone: phone ?? existing.phone,
       },
+    });
+    await prisma.organizationMembership.upsert({
+      where: {
+        organizationId_userId: {
+          organizationId,
+          userId: existing.id,
+        },
+      },
+      create: {
+        organizationId,
+        userId: existing.id,
+        role: "ORG_PARTICIPANT",
+      },
+      update: {},
     });
   }
 
@@ -137,6 +174,7 @@ export async function createMemberInvite(input: CreateInviteInput) {
   const invite = await prisma.invite.create({
     data: {
       token,
+      organizationId,
       userId: user.id,
       committeeId: input.committeeId,
       title: input.title,

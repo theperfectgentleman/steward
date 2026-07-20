@@ -38,7 +38,7 @@ export function PageShimmer({
 
   if (variant === "cards") {
     return (
-      <div className="space-y-6" aria-busy="true" aria-label="Loading">
+      <div className="space-y-4" aria-busy="true" aria-label="Loading">
         <div className="space-y-2">
           <ShimmerBar className="h-8 w-56" />
           <ShimmerBar className="h-4 w-72 max-w-full" />
@@ -59,7 +59,7 @@ export function PageShimmer({
 
   if (variant === "detail") {
     return (
-      <div className="space-y-6" aria-busy="true" aria-label="Loading">
+      <div className="space-y-4" aria-busy="true" aria-label="Loading">
         <ShimmerBar className="h-4 w-24" />
         <ShimmerBar className="h-9 w-2/3 max-w-md" />
         <ShimmerBar className="h-4 w-full max-w-lg" />

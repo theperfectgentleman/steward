@@ -66,8 +66,8 @@ export function FeedbackReviewSheet({
   return (
     <>
       <TouchButton
-        size="lg"
-        className={`text-sm sm:text-base ${triggerClassName}`}
+        size="md"
+        className={triggerClassName}
         onClick={() => setOpen(true)}
       >
         <Inbox className="h-5 w-5 shrink-0" />

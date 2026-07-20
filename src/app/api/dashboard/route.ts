@@ -191,25 +191,32 @@ export async function GET(request: Request) {
     ...pendingMinutes.map((m) => ({
       id: `minutes-${m.id}`,
       type: "minutes" as const,
-      message: `${m.committee.name} minutes filed — pending review`,
+      message: `${m.committee?.name ?? "Committee"} minutes filed — pending review`,
       time: m.date.toISOString(),
-      href: "/minutes",
-      committeeId: m.committee.id,
+      href: m.eventId
+        ? `/c/${m.committeeId}/schedule/${m.eventId}`
+        : m.committeeId
+          ? `/c/${m.committeeId}/schedule`
+          : "/schedule",
+      committeeId: m.committee?.id ?? m.committeeId ?? undefined,
       meetingId: m.id,
     })),
     ...recentAssignments.map((a) => ({
       id: `assignment-${a.id}`,
       type: "assignment" as const,
-      message: `${a.targetCommittee.name}: ${a.title} — ${a.status.replace(/_/g, " ").toLowerCase()}`,
+      message: `${a.targetCommittee?.name ?? "Personal"}: ${a.title} — ${a.status.replace(/_/g, " ").toLowerCase()}`,
       time: a.updatedAt.toISOString(),
       href: `/assignments/${a.id}`,
-      committeeId: a.targetCommittee.id,
+      committeeId: a.targetCommittee?.id,
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
   const visibleAlerts = canViewAllCommittees(perm)
     ? alerts
-    : alerts.filter((a) => canAccessCommittee(auth.user, a.committeeId));
+    : alerts.filter(
+        (a) =>
+          !a.committeeId || canAccessCommittee(auth.user, a.committeeId),
+      );
 
   return NextResponse.json({
     stats,

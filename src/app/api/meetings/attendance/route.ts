@@ -28,6 +28,12 @@ export async function PATCH(request: Request) {
   if (!meeting) {
     return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
   }
+  if (!meeting.committeeId) {
+    return NextResponse.json(
+      { error: "Meeting is not linked to a committee" },
+      { status: 400 },
+    );
+  }
 
   const mutation = assertCommitteeMutation(auth.user, meeting.committeeId);
   if (mutation) return mutation;

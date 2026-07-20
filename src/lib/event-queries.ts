@@ -28,6 +28,20 @@ export async function getEventWithProgress(eventId: string) {
         },
         orderBy: { createdAt: "desc" },
       },
+      agendaItems: {
+        orderBy: { order: "asc" },
+        include: {
+          assignment: { select: { id: true, title: true } },
+        },
+      },
+      meeting: {
+        include: {
+          minutes: { orderBy: { order: "asc" } },
+          attendances: {
+            include: { user: { select: { id: true, name: true } } },
+          },
+        },
+      },
     },
   });
 

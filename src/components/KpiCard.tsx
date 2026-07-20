@@ -31,14 +31,14 @@ export function KpiCard({
 }: KpiCardProps) {
   const inner = (
     <>
-      <p className={`text-xs uppercase tracking-wider ${LABEL_TEXT[accent]}`}>{label}</p>
-      <p className="text-3xl font-extrabold text-charcoal mt-1 tracking-tight">{value}</p>
-      {hint && <p className="text-xs mt-1.5 text-muted font-medium">{hint}</p>}
+      <p className={`text-[11px] uppercase tracking-wider ${LABEL_TEXT[accent]}`}>{label}</p>
+      <p className="text-xl font-bold text-charcoal mt-0.5 tracking-tight tabular-nums">{value}</p>
+      {hint && <p className="text-xs mt-0.5 text-muted font-medium leading-snug">{hint}</p>}
     </>
   );
 
-  const className = `rounded-2xl p-5 transition-transform block ${ACCENT[accent]} ${
-    href ? "cursor-pointer hover:-translate-y-0.5 hover:border-primary/40" : ""
+  const className = `rounded-xl px-3 py-2.5 transition-transform block ${ACCENT[accent]} ${
+    href ? "cursor-pointer hover:border-primary/40" : ""
   }`;
 
   if (href) {
