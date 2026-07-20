@@ -8,7 +8,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 # Skip postinstall (prisma generate) — schema is not copied yet
-RUN npm ci --ignore-scripts
+RUN npm install --ignore-scripts
 
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
