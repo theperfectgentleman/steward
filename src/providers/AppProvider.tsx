@@ -15,6 +15,7 @@ import type {
   UserRole,
 } from "@/lib/types";
 import { filterDismissedAttention } from "@/lib/attention-dismiss";
+import type { AttentionItem } from "@/lib/attention";
 
 export type OrgMembershipCard = {
   organizationId: string;
@@ -116,7 +117,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
-        const items = filterDismissedAttention(data.items ?? []);
+        const items = filterDismissedAttention<AttentionItem>(data.items ?? []);
         const nowCount = items.filter((i) => i.urgency === "NOW").length;
         setAttentionCount(nowCount);
       })
