@@ -3,78 +3,81 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ClipboardCheck, FileText, MessageSquarePlus } from "lucide-react";
+import { ClipboardCheck, Calendar, FileText } from "lucide-react";
 import { AlertFeed, type AlertItem } from "@/components/AlertFeed";
-import { GanttChart, type GanttItem } from "@/components/GanttChart";
-import { MyWorkHub } from "@/components/MyWorkHub";
 import { DashboardStatsPanel } from "@/components/DashboardStatsPanel";
+import { GanttChart, type GanttItem } from "@/components/GanttChart";
 import { QuickActionLink } from "@/components/QuickActionLink";
+import { TaskStatusBreakdown } from "@/components/TaskStatusBreakdown";
 import { useApp } from "@/providers/AppProvider";
 import { toPermissionUser } from "@/lib/permissions-client";
 import {
-  canCreatePresbyteryAssignment,
+  canCreateDirective,
   canViewAllCommittees,
+  canManageTor,
 } from "@/lib/types";
-import { formatDate } from "@/lib/dates";
 import { buildOverallDashboardStats } from "@/lib/dashboard-kpis";
-import { assignWorkPath, committeePath, documentsPath, suggestionsPath } from "@/lib/navigation";
+import {
+  tasksAssignPath,
+  documentsPath,
+  eventsPath,
+  tasksPath,
+} from "@/lib/navigation";
 
 type CommitteeStat = {
   id: string;
   charterLetter: string;
   name: string;
   total: number;
+  todo?: number;
+  inProgress?: number;
   done: number;
   blocked: number;
-  activeProjects?: number;
-  meetingCount?: number;
+  inReview?: number;
+  upcomingEvents?: number;
+  torDocumentId?: string | null;
+  torTitle?: string | null;
 };
-
-type PipelineRow = { status: string; _count: number };
 
 export function OverallDashboardView() {
   const router = useRouter();
   const { user } = useApp();
   const [stats, setStats] = useState<CommitteeStat[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [pipeline, setPipeline] = useState<PipelineRow[]>([]);
-  const [awaitingClose, setAwaitingClose] = useState<
-    { id: string; title: string; targetCommittee: { id: string; name: string } }[]
-  >([]);
-  const [assignmentDrafts, setAssignmentDrafts] = useState(0);
+  const [upcomingEvents, setUpcomingEvents] = useState(0);
+  const [tasksInReview, setTasksInReview] = useState(0);
+  const [myOpenTasks, setMyOpenTasks] = useState(0);
   const [timelineGoals, setTimelineGoals] = useState<GanttItem[]>([]);
   const [viewMode, setViewMode] = useState<"gantt" | "cards">("gantt");
 
   const perm = user ? toPermissionUser(user) : null;
-  const isExecutive = perm && canViewAllCommittees(perm);
-  const canAssign = perm && canCreatePresbyteryAssignment(perm);
+  const isExecutive = !!(perm && canViewAllCommittees(perm));
+  const canAssign = !!(perm && canCreateDirective(perm));
+  const supervisoryLabel =
+    user?.organization?.settings.supervisoryLabel ?? "Governance";
+  const committeeLabel =
+    user?.organization?.settings.committeeLabel ?? "Committee";
 
   const loadDashboard = useCallback(() => {
     fetch("/api/dashboard")
       .then((r) => r.json())
       .then((data) => {
         setStats(data.stats ?? []);
-        setPipeline(data.assignmentPipeline ?? []);
-        setAwaitingClose(data.awaitingMyClose ?? []);
-        setAssignmentDrafts(data.myAssignmentDrafts ?? 0);
+        setUpcomingEvents(data.upcomingEvents ?? 0);
+        setTasksInReview(data.tasksInReview ?? 0);
+        setMyOpenTasks(data.myOpenTasks ?? 0);
         setTimelineGoals(data.timelineGoals ?? []);
         setAlerts(
-          (data.alerts ?? []).map((a: AlertItem & { time: string; href?: string }) => ({
-            ...a,
-            href:
-              a.href ??
-              (a.committeeId
-                ? committeePath(
-                    a.committeeId,
-                    a.type === "minutes"
-                      ? "minutes"
-                      : a.type === "blocked" || a.type === "completed"
-                        ? "tasks"
-                        : undefined,
-                  )
-                : undefined),
-            time: formatDate(a.time),
-          })),
+          (data.alerts ?? []).map(
+            (a: AlertItem & { time: string; href?: string }) => ({
+              ...a,
+              href:
+                a.href ??
+                (a.type === "minutes"
+                  ? eventsPath(a.committeeId)
+                  : tasksPath(a.committeeId)),
+            }),
+          ),
         );
       })
       .catch(() => undefined);
@@ -96,18 +99,17 @@ export function OverallDashboardView() {
   );
 
   const pendingMinutes = alerts.filter((a) => a.type === "minutes").length;
-  const openAssignments = pipeline
-    .filter((p) => !["CLOSED", "CANCELLED"].includes(p.status))
-    .reduce((n, p) => n + p._count, 0);
 
   const kpiSections = buildOverallDashboardStats({
     stats,
     alerts,
     totals,
     pendingMinutes,
-    openAssignments,
-    awaitingCloseCount: awaitingClose.length,
-    assignmentDrafts,
+    openDirectives: tasksInReview,
+    awaitingCloseCount: 0,
+    directiveDrafts: 0,
+    upcomingEvents,
+    myOpenTasks,
     perm,
   });
 
@@ -124,47 +126,131 @@ export function OverallDashboardView() {
     canAssign
       ? {
           key: "assign",
-          href: assignWorkPath(),
-          label: "Assign work",
+          href: tasksAssignPath(),
+          label: "Assign directive",
           icon: ClipboardCheck,
         }
       : null,
     {
-      key: "suggestions",
-      href: suggestionsPath(),
-      label: "Suggestions",
-      icon: MessageSquarePlus,
+      key: "events",
+      href: eventsPath(),
+      label: "Events",
+      icon: Calendar,
     },
-    user?.role !== "ORG_TECH"
-      ? {
-          key: "documents",
-          href: documentsPath(),
-          label: "Documents",
-          icon: FileText,
-        }
-      : null,
-  ].filter((action): action is { key: string; href: string; label: string; icon: typeof FileText } => action != null);
+    {
+      key: "documents",
+      href: documentsPath(),
+      label: "Docs",
+      icon: FileText,
+    },
+  ].filter(
+    (action): action is {
+      key: string;
+      href: string;
+      label: string;
+      icon: typeof FileText;
+    } => action != null,
+  );
+
+  const committeeCards =
+    stats.length === 0 ? (
+      <p className="text-center text-muted py-6 rounded-xl border border-charcoal/5 bg-white text-sm">
+        No group data yet.
+      </p>
+    ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {stats.map((s) => {
+          const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+          return (
+            <div
+              key={s.id}
+              className="flex flex-col gap-1.5 rounded-xl border border-charcoal/5 bg-white px-3 py-2.5 shadow-xs hover:border-primary/30 transition-colors"
+            >
+              <Link
+                href={tasksPath(s.id)}
+                onClick={() =>
+                  localStorage.setItem("unitycommit-committee", s.id)
+                }
+                className="flex items-start gap-2.5 min-w-0"
+              >
+                <span className="w-7 h-7 flex items-center justify-center rounded-lg bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0 text-xs">
+                  {s.charterLetter}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="font-semibold text-charcoal text-sm leading-snug line-clamp-2">
+                      {s.name}
+                    </p>
+                    <span className="text-xs font-bold text-charcoal shrink-0 tabular-nums">
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+              </Link>
+              <TaskStatusBreakdown
+                compact
+                counts={{
+                  TODO: s.todo ?? 0,
+                  IN_PROGRESS: s.inProgress ?? 0,
+                  IN_REVIEW: s.inReview ?? 0,
+                  DONE: s.done,
+                  BLOCKED: s.blocked,
+                  total: s.total,
+                }}
+              />
+              <p className="text-[11px] text-muted font-medium">
+                {s.done}/{s.total} tasks · {s.blocked} awaiting
+                {s.upcomingEvents != null && s.upcomingEvents > 0
+                  ? ` · ${s.upcomingEvents} upcoming`
+                  : ""}
+              </p>
+              {s.torDocumentId ? (
+                <Link
+                  href={`/documents/${s.torDocumentId}`}
+                  onClick={() =>
+                    localStorage.setItem("unitycommit-committee", s.id)
+                  }
+                  className="text-[11px] font-semibold text-primary hover:underline"
+                >
+                  View TOR
+                </Link>
+              ) : perm && canManageTor(perm, s.id) ? (
+                <Link
+                  href={documentsPath({ committeeId: s.id, tag: "TOR" })}
+                  onClick={() =>
+                    localStorage.setItem("unitycommit-committee", s.id)
+                  }
+                  className="text-[11px] font-semibold text-muted hover:text-primary hover:underline"
+                >
+                  Add TOR
+                </Link>
+              ) : (
+                <span className="text-[11px] text-muted">No TOR yet</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
 
   return (
     <div className="space-y-4">
-      <MyWorkHub />
-
       <div>
         <h1 className="text-xl font-bold text-charcoal">
-          {isExecutive ? "Presbytery Dashboard" : "Overall Dashboard"}
+          {isExecutive ? `${supervisoryLabel} overview` : "Home"}
         </h1>
         <p className="text-sm text-muted mt-0.5">
           {isExecutive
-            ? "Real-time view across all 19 committees"
-            : "Your committees at a glance"}
+            ? `Org-wide glance across ${committeeLabel.toLowerCase()}s — act in Work`
+            : `Your ${committeeLabel.toLowerCase()}s at a glance`}
         </p>
       </div>
 
       <DashboardStatsPanel
         attention={kpiSections.attention}
         snapshot={kpiSections.snapshot}
-        attentionTitle="Needs your attention"
-        snapshotTitle={isExecutive ? "Church-wide snapshot" : "At a glance"}
+        attentionTitle="Needs attention"
+        snapshotTitle={isExecutive ? "Org-wide snapshot" : "My groups"}
       />
 
       {quickActions.length > 0 && (
@@ -194,104 +280,56 @@ export function OverallDashboardView() {
         </section>
       )}
 
-      {isExecutive && awaitingClose.length > 0 && (
-        <section
-          id="dashboard-awaiting-close"
-          className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 space-y-2"
-        >
-          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
-            Awaiting my close ({awaitingClose.length})
-          </h2>
-          <ul className="space-y-1">
-            {awaitingClose.map((a) => (
-              <li key={a.id}>
-                <Link
-                  href={`/assignments/${a.id}?action=close`}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-white border border-charcoal/10 px-3 py-2 hover:border-primary/40"
-                >
-                  <span className="text-sm font-semibold text-charcoal truncate">{a.title}</span>
-                  <span className="text-[11px] text-muted shrink-0">
-                    {a.targetCommittee?.name ?? "Personal"}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       <div className="grid gap-4 lg:grid-cols-3">
-        <section id="dashboard-committees" className="lg:col-span-2 space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
-              Committee Project Timeline & Status
-            </h2>
-            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-charcoal/10">
-              <button
-                onClick={() => setViewMode("gantt")}
-                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewMode === 'gantt' ? 'bg-white shadow-sm text-charcoal' : 'text-muted hover:text-charcoal'}`}
-              >
-                Timeline
-              </button>
-              <button
-                onClick={() => setViewMode("cards")}
-                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewMode === 'cards' ? 'bg-white shadow-sm text-charcoal' : 'text-muted hover:text-charcoal'}`}
-              >
-                Cards
-              </button>
-            </div>
-          </div>
-          {viewMode === "gantt" ? (
-             <GanttChart items={timelineGoals} />
-          ) : stats.length === 0 ? (
-            <p className="text-center text-muted py-6 rounded-xl border border-charcoal/5 bg-white text-sm">
-              No committee data yet.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {stats.map((s) => {
-                const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-                return (
-                  <Link
-                    key={s.id}
-                    href={committeePath(s.id)}
-                    onClick={() => localStorage.setItem("unitycommit-committee", s.id)}
-                    className="flex flex-col gap-1.5 rounded-xl border border-charcoal/5 bg-white px-3 py-2.5 shadow-xs hover:border-primary/30 transition-colors"
+        <section id="dashboard-committees" className="space-y-2 lg:col-span-2">
+          {isExecutive ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-accent">
+                  {supervisoryLabel} timeline
+                </h2>
+                <div className="flex items-center gap-1 rounded-lg border border-charcoal/10 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("gantt")}
+                    className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+                      viewMode === "gantt"
+                        ? "bg-white text-charcoal shadow-sm"
+                        : "text-muted hover:text-charcoal"
+                    }`}
                   >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <span className="w-7 h-7 flex items-center justify-center rounded-lg bg-accent/10 border border-accent/20 text-accent font-extrabold uppercase shrink-0 text-xs">
-                        {s.charterLetter}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <p className="font-semibold text-charcoal text-sm leading-snug line-clamp-2">
-                            {s.name}
-                          </p>
-                          <span className="text-xs font-bold text-charcoal shrink-0 tabular-nums">{pct}%</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted font-medium">
-                      {s.done}/{s.total} tasks · {s.blocked} awaiting
-                      {s.activeProjects != null && ` · ${s.activeProjects} projects`}
-                    </p>
-                  </Link>
-                );
-              })}
-            </div>
+                    Timeline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("cards")}
+                    className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+                      viewMode === "cards"
+                        ? "bg-white text-charcoal shadow-sm"
+                        : "text-muted hover:text-charcoal"
+                    }`}
+                  >
+                    Cards
+                  </button>
+                </div>
+              </div>
+              {viewMode === "gantt" ? (
+                <GanttChart items={timelineGoals} />
+              ) : (
+                committeeCards
+              )}
+            </>
+          ) : (
+            <>
+              <h2 className="text-[11px] font-bold uppercase tracking-wider text-accent">
+                {`My ${committeeLabel.toLowerCase()}s`}
+              </h2>
+              {committeeCards}
+            </>
           )}
         </section>
 
-        <section id="dashboard-alerts" className="space-y-2">
-          <h2 className="text-[11px] font-bold text-accent uppercase tracking-wider">
-            Alerts & Activity Feed (Paged)
-          </h2>
+        <section id="dashboard-alerts" className="min-w-0 lg:col-span-1">
           <AlertFeed alerts={alerts} onAlertClick={handleAlertClick} />
         </section>
       </div>

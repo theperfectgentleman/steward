@@ -125,17 +125,99 @@ export type TaskDraft = {
 export async function generateTaskDrafts(
   eventTitle: string,
   eventDescription: string,
+  opts?: {
+    kindLabel?: string;
+    agendaNotes?: string | null;
+    agendaItems?: string[];
+  },
 ): Promise<TaskDraft[]> {
   const description = truncate(eventDescription);
+  const kindLabel = opts?.kindLabel?.trim() || "Event";
+  const agendaNotes = opts?.agendaNotes?.trim();
+  const agendaItems = (opts?.agendaItems ?? []).map((s) => s.trim()).filter(Boolean);
 
-  const systemPrompt = `You are a church committee planning assistant. Given an event title and description, produce 4-8 broad, actionable parent tasks that a committee can assign to members. Each task should be concrete and achievable. Return ONLY valid JSON: an array of objects with "title" (string, required) and "description" (string, optional, one sentence). No markdown, no explanation.`;
+  const agendaBlock = [
+    agendaNotes ? `Agenda notes:\n${truncate(agendaNotes)}` : "",
+    agendaItems.length
+      ? `Agenda items:\n${agendaItems.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
-  const userPrompt = `Event title: ${eventTitle}\n\nEvent description:\n${description || "(no description provided)"}\n\nRespond with JSON: { "tasks": [ { "title": "...", "description": "..." } ] }`;
+  const systemPrompt = `You are a church committee planning assistant. Given an event of type "${kindLabel}", produce 4-8 broad, actionable parent tasks that a committee can assign to members. Tailor tasks to this event type (e.g. meeting prep/follow-up, visit logistics, workshop facilitation, program run-of-show). Each task should be concrete and achievable. Return ONLY valid JSON: an array of objects with "title" (string, required) and "description" (string, optional, one sentence). No markdown, no explanation.`;
+
+  const userPrompt = `Event type: ${kindLabel}\nEvent title: ${eventTitle}\n\nEvent description:\n${description || "(no description provided)"}${agendaBlock ? `\n\n${agendaBlock}` : ""}\n\nRespond with JSON: { "tasks": [ { "title": "...", "description": "..." } ] }`;
 
   const parsed = await callGroqJson(systemPrompt, userPrompt);
   const tasks = extractTasks(parsed);
   if (tasks.length === 0) {
     throw new Error("AI returned no tasks");
+  }
+
+  return tasks.map((t) => ({
+    title: t.title.trim(),
+    description: t.description?.trim() || undefined,
+  }));
+}
+
+/** Suggest committee Work items from a Terms of Reference (or similar mandate doc). */
+export async function generateTorWorkDrafts(
+  title: string,
+  body: string,
+  committeeName?: string,
+): Promise<TaskDraft[]> {
+  const content = truncate(body);
+  const group = committeeName?.trim() || "the committee";
+  const systemPrompt = `You are a church committee planning assistant. Given a Terms of Reference (TOR) or mandate document for ${group}, propose 5-10 concrete Work items the committee can take up this season. Each item should be actionable, scoped to the TOR, and suitable as a parent work item (not tiny personal todos). Prefer outcomes over vague ongoing duties. Return ONLY valid JSON: { "tasks": [ { "title": string, "description": string (optional, one sentence) } ] }. No markdown.`;
+
+  const userPrompt = `Committee: ${group}\nDocument title: ${title}\n\nTOR / mandate content:\n${content || "(empty)"}\n\nRespond with JSON: { "tasks": [ { "title": "...", "description": "..." } ] }`;
+
+  const parsed = await callGroqJson(systemPrompt, userPrompt);
+  const tasks = extractTasks(parsed);
+  if (tasks.length === 0) {
+    throw new Error("AI returned no work suggestions");
+  }
+
+  return tasks.map((t) => ({
+    title: t.title.trim(),
+    description: t.description?.trim() || undefined,
+  }));
+}
+
+/** Suggest concrete subtasks to break down a parent Work / directive item. */
+export async function generateSubtaskDrafts(
+  title: string,
+  description: string | null | undefined,
+  opts?: {
+    workClassLabel?: string;
+    existingTitles?: string[];
+    dueDate?: string | null;
+  },
+): Promise<TaskDraft[]> {
+  const content = truncate(description ?? "");
+  const existing = (opts?.existingTitles ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  const kind = opts?.workClassLabel?.trim() || "committee work";
+  const systemPrompt = `You are a church committee planning assistant. Given a parent ${kind} item, propose 4-8 concrete subtasks someone can complete. Each subtask should be actionable, scoped under the parent, and not duplicate existing subtasks. Prefer clear deliverables over vague ongoing duties. Return ONLY valid JSON: { "tasks": [ { "title": string, "description": string (optional, one sentence) } ] }. No markdown.`;
+
+  const userPrompt = [
+    `Parent title: ${title}`,
+    `Work type: ${kind}`,
+    `Due date: ${opts?.dueDate || "(none)"}`,
+    `Description:\n${content || "(no description)"}`,
+    existing.length
+      ? `Existing subtasks (do not duplicate):\n${existing.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
+      : "Existing subtasks: none",
+    `Respond with JSON: { "tasks": [ { "title": "...", "description": "..." } ] }`,
+  ].join("\n\n");
+
+  const parsed = await callGroqJson(systemPrompt, userPrompt);
+  const tasks = extractTasks(parsed);
+  if (tasks.length === 0) {
+    throw new Error("AI returned no subtask suggestions");
   }
 
   return tasks.map((t) => ({

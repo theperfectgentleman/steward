@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { TouchButton } from "@/components/TouchButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { InviteMemberSheet } from "@/components/InviteMemberSheet";
+import { PeoplePickerField } from "@/components/people/PeoplePickerField";
 import { useApp } from "@/providers/AppProvider";
-import { USER_ROLE_LABELS, isSuperAdmin, type UserRole } from "@/lib/types";
+import { USER_ROLE_LABELS, isSuperAdmin, SUPERVISORY_TITLE_LABELS, type SupervisoryTitle, type UserRole } from "@/lib/types";
 import { formatDateTime } from "@/lib/dates";
 import { FormSelect } from "@/components/FormSelect";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
@@ -39,7 +40,17 @@ export function AdminView() {
   const [selectedCommittees, setSelectedCommittees] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState<"CHAIR" | "SECRETARY" | "MEMBER">("MEMBER");
   const [form, setForm] = useState({ name: "", email: "", phone: "", role: "ORG_PARTICIPANT" as UserRole });
-  const [presbytery, setPresbytery] = useState<{ members: { id: string; isHead: boolean; user: User }[] } | null>(null);
+  const [supervisoryRoster, setSupervisoryRoster] = useState<{
+    members: {
+      id: string;
+      isHead: boolean;
+      title?: SupervisoryTitle;
+      customTitle?: string | null;
+      canViewAll?: boolean;
+      canApproveOptional?: boolean;
+      user: User;
+    }[];
+  } | null>(null);
   const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; createdAt: string; actor: { name: string } }[]>([]);
   const [saving, setSaving] = useState(false);
   const [editingCommittee, setEditingCommittee] = useState<string | null>(null);
@@ -56,7 +67,7 @@ export function AdminView() {
     fetch("/api/committees?scope=all&meta=true")
       .then((r) => r.json())
       .then(setCommittees);
-    fetch("/api/presbytery").then((r) => r.json()).then(setPresbytery).catch(() => undefined);
+    fetch("/api/supervisory").then((r) => r.json()).then(setSupervisoryRoster).catch(() => undefined);
     fetch("/api/audit?limit=20").then((r) => r.json()).then(setAuditLogs).catch(() => undefined);
   };
 
@@ -161,6 +172,9 @@ export function AdminView() {
     }
   };
 
+  const supervisoryLabel =
+    user?.organization?.settings.supervisoryLabel ?? "Governance";
+
   return (
     <div className="space-y-4">
       <div>
@@ -180,12 +194,6 @@ export function AdminView() {
             className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold"
           >
             RBAC & policies
-          </a>
-          <a
-            href="/reports"
-            className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold"
-          >
-            Reports
           </a>
         </div>
       </div>
@@ -250,25 +258,77 @@ export function AdminView() {
       <section className="rounded-2xl border border-accent/20 bg-accent/5 p-4">
         <h2 className="text-sm font-bold text-charcoal">Planned</h2>
         <ul className="text-sm text-muted mt-2 space-y-1 list-disc pl-5">
-          <li>Document uploads coming soon</li>
+          <li>SMS notifications</li>
         </ul>
       </section>
 
       <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
-        <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Presbytery Roster</h2>
+        <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">
+          {supervisoryLabel} Roster
+        </h2>
         <ul className="space-y-2">
-          {(presbytery?.members ?? []).map((m) => (
-            <li key={m.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-charcoal/10">
-              <span className="font-medium text-charcoal">
-                {m.user.name} {m.isHead && <span className="text-xs text-accent">(Head)</span>}
-              </span>
-              <div className="flex gap-2">
+          {(supervisoryRoster?.members ?? []).map((m) => {
+            const titleLabel =
+              m.customTitle ||
+              SUPERVISORY_TITLE_LABELS[(m.title as SupervisoryTitle) ?? "MEMBER"];
+            return (
+            <li key={m.id} className="flex flex-col gap-2 p-3 rounded-xl border border-charcoal/10 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <span className="font-medium text-charcoal block">
+                  {m.user.name} {m.isHead && <span className="text-xs text-accent">(Head)</span>}
+                </span>
+                <span className="text-xs text-muted">{titleLabel}</span>
+                <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
+                  {m.canViewAll ? <span>View all committees</span> : null}
+                  {m.canApproveOptional ? <span>Optional approver</span> : null}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <FormSelect
+                  value={(m.title as SupervisoryTitle) ?? "MEMBER"}
+                  onChange={(e) =>
+                    fetch("/api/supervisory", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "update",
+                        userId: m.user.id,
+                        title: e.target.value,
+                      }),
+                    }).then(refresh)
+                  }
+                  className="text-xs"
+                >
+                  {Object.entries(SUPERVISORY_TITLE_LABELS).map(([k, label]) => (
+                    <option key={k} value={k}>
+                      {label}
+                    </option>
+                  ))}
+                </FormSelect>
+                <label className="flex items-center gap-1 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={!!m.canViewAll}
+                    onChange={(e) =>
+                      fetch("/api/supervisory", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "update",
+                          userId: m.user.id,
+                          canViewAll: e.target.checked,
+                        }),
+                      }).then(refresh)
+                    }
+                  />
+                  View all
+                </label>
                 {!m.isHead && (
                   <TouchButton
                     size="md"
                     variant="secondary"
                     onClick={() =>
-                      fetch("/api/presbytery", {
+                      fetch("/api/supervisory", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ action: "set_head", userId: m.user.id }),
@@ -282,7 +342,7 @@ export function AdminView() {
                   size="md"
                   variant="ghost"
                   onClick={() =>
-                    fetch("/api/presbytery", {
+                    fetch("/api/supervisory", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ action: "remove", userId: m.user.id }),
@@ -293,30 +353,26 @@ export function AdminView() {
                 </TouchButton>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
-        <FormSelect
-          defaultValue=""
-          onChange={(e) => {
-            const userId = e.target.value;
+        <PeoplePickerField
+          mode="single"
+          excludeIds={
+            supervisoryRoster?.members.map((m) => m.user.id) ?? []
+          }
+          placeholder={`Add ${supervisoryLabel} member…`}
+          title={`Add ${supervisoryLabel} member`}
+          onConfirm={(ids) => {
+            const userId = ids[0];
             if (!userId) return;
-            fetch("/api/presbytery", {
+            fetch("/api/supervisory", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ userId, action: "add" }),
             }).then(refresh);
-            e.target.value = "";
           }}
-        >
-          <option value="">Add Presbytery member…</option>
-          {users
-            .filter((u) => !presbytery?.members.some((m) => m.user.id === u.id))
-            .map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-        </FormSelect>
+        />
       </section>
 
       <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
@@ -430,7 +486,7 @@ export function AdminView() {
               disabled={!selectedUser || selectedCommittees.size === 0 || saving}
               onClick={assignCommittees}
             >
-              Save Assignments
+              Save memberships
             </TouchButton>
           </section>
         </div>

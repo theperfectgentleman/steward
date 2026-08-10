@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UnityCommit control script — start, stop, build, and manage the app.
+# UnityCommit control script — start, stop, build, and manage the app + collab server.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,9 +8,12 @@ cd "$ROOT_DIR"
 PID_DIR="$ROOT_DIR/.deploy"
 DEV_PID_FILE="$PID_DIR/dev.pid"
 PROD_PID_FILE="$PID_DIR/prod.pid"
+COLLAB_PID_FILE="$PID_DIR/collab.pid"
 DEV_LOG="$PID_DIR/dev.log"
 PROD_LOG="$PID_DIR/prod.log"
+COLLAB_LOG="$PID_DIR/collab.log"
 PORT="${PORT:-3000}"
+COLLAB_PORT="${COLLAB_PORT:-1234}"
 
 mkdir -p "$PID_DIR"
 
@@ -53,6 +56,21 @@ require_env() {
   fi
 }
 
+ensure_collab_env() {
+  # Soft-check: document live editing needs these; warn but do not block Next start.
+  if [[ -f "$ROOT_DIR/.env" ]]; then
+    if ! grep -q '^NEXT_PUBLIC_COLLAB_WS_URL=' "$ROOT_DIR/.env" 2>/dev/null; then
+      warn "NEXT_PUBLIC_COLLAB_WS_URL missing in .env — defaulting client to ws://localhost:${COLLAB_PORT}"
+    fi
+    if ! grep -q '^COLLAB_TOKEN_SECRET=' "$ROOT_DIR/.env" 2>/dev/null \
+      && ! grep -q '^SESSION_SECRET=' "$ROOT_DIR/.env" 2>/dev/null; then
+      warn "COLLAB_TOKEN_SECRET missing — collab server will use the dev default secret."
+    fi
+  fi
+  export COLLAB_PORT
+  export NEXT_PUBLIC_COLLAB_WS_URL="${NEXT_PUBLIC_COLLAB_WS_URL:-ws://localhost:${COLLAB_PORT}}"
+}
+
 is_running() {
   local pid_file="$1"
   [[ -f "$pid_file" ]] || return 1
@@ -84,8 +102,11 @@ stop_process() {
   local pid
   pid="$(pid_of "$pid_file")"
   info "Stopping $label (pid $pid)…"
+  # Kill process group when possible (npm/tsx spawn children)
   kill "$pid" 2>/dev/null || true
-  # Give it a moment, then force if needed
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -P "$pid" 2>/dev/null || true
+  fi
   for _ in 1 2 3 4 5; do
     if ! kill -0 "$pid" 2>/dev/null; then
       break
@@ -95,16 +116,26 @@ stop_process() {
   if kill -0 "$pid" 2>/dev/null; then
     warn "Force-killing $label…"
     kill -9 "$pid" 2>/dev/null || true
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -9 -P "$pid" 2>/dev/null || true
+    fi
   fi
   rm -f "$pid_file"
   ok "$label stopped."
 }
 
+# start_background LABEL PID_FILE LOG_FILE [URL] -- CMD...
 start_background() {
   local label="$1"
   local pid_file="$2"
   local log_file="$3"
   shift 3
+
+  local url=""
+  if [[ "${1:-}" == --url ]]; then
+    url="$2"
+    shift 2
+  fi
 
   if is_running "$pid_file"; then
     warn "$label is already running (pid $(pid_of "$pid_file"))."
@@ -120,7 +151,9 @@ start_background() {
   if kill -0 "$pid" 2>/dev/null; then
     ok "$label started (pid $pid)."
     info "Logs: $log_file"
-    info "URL:  http://localhost:${PORT}"
+    if [[ -n "$url" ]]; then
+      info "URL:  $url"
+    fi
   else
     err "$label failed to start. Check $log_file"
     rm -f "$pid_file"
@@ -132,7 +165,8 @@ show_status() {
   echo
   printf "${c_bold}Status${c_reset}\n"
   printf "  Project:  %s\n" "$ROOT_DIR"
-  printf "  Port:     %s\n" "$PORT"
+  printf "  App port: %s\n" "$PORT"
+  printf "  Collab:   %s (ws://localhost:%s)\n" "$COLLAB_PORT" "$COLLAB_PORT"
   printf "  Node:     %s\n" "$(command -v node >/dev/null && node -v || echo 'not found')"
   printf "  npm:      %s\n" "$(command -v npm >/dev/null && npm -v || echo 'not found')"
   printf "  .env:     %s\n" "$([[ -f .env ]] && echo 'present' || echo 'MISSING')"
@@ -148,6 +182,12 @@ show_status() {
     printf "  Prod:     ${c_green}running${c_reset} (pid %s)\n" "$(pid_of "$PROD_PID_FILE")"
   else
     printf "  Prod:     ${c_dim}stopped${c_reset}\n"
+  fi
+
+  if is_running "$COLLAB_PID_FILE"; then
+    printf "  Collab:   ${c_green}running${c_reset} (pid %s) — document live co-edit\n" "$(pid_of "$COLLAB_PID_FILE")"
+  else
+    printf "  Collab:   ${c_dim}stopped${c_reset} — document live co-edit unavailable\n"
   fi
   echo
 }
@@ -219,9 +259,27 @@ do_db_seed_reset() {
   ok "Database reset and reseeded."
 }
 
+do_start_collab() {
+  require_node || return 1
+  require_env || return 1
+  ensure_collab_env
+  if [[ ! -d node_modules ]]; then
+    warn "Installing dependencies first…"
+    npm install
+  fi
+  start_background "Collab server" "$COLLAB_PID_FILE" "$COLLAB_LOG" \
+    --url "ws://localhost:${COLLAB_PORT}" \
+    npm run dev:collab
+}
+
+do_stop_collab() {
+  stop_process "Collab server" "$COLLAB_PID_FILE"
+}
+
 do_start_dev() {
   require_node || return 1
   require_env || return 1
+  ensure_collab_env
   if [[ ! -d node_modules ]]; then
     warn "Installing dependencies first…"
     npm install
@@ -230,12 +288,16 @@ do_start_dev() {
     warn "Production server is running. Stop it before starting dev, or use a different PORT."
   fi
   start_background "Dev server" "$DEV_PID_FILE" "$DEV_LOG" \
+    --url "http://localhost:${PORT}" \
     npm run dev -- --port "$PORT"
+  # Live document co-editing (TipTap + Yjs / Hocuspocus)
+  do_start_collab || warn "Collab server failed — editors will fall back to local (non-live) mode."
 }
 
 do_start_prod() {
   require_node || return 1
   require_env || return 1
+  ensure_collab_env
   if [[ ! -d .next ]]; then
     warn "No production build found. Building first…"
     npm run build
@@ -244,7 +306,9 @@ do_start_prod() {
     warn "Dev server is running. Stop it before starting production, or use a different PORT."
   fi
   start_background "Production server" "$PROD_PID_FILE" "$PROD_LOG" \
+    --url "http://localhost:${PORT}" \
     npm run start -- --port "$PORT"
+  do_start_collab || warn "Collab server failed — editors will fall back to local (non-live) mode."
 }
 
 do_build() {
@@ -269,6 +333,7 @@ do_stop_prod() {
 do_stop_all() {
   do_stop_dev
   do_stop_prod
+  do_stop_collab
 }
 
 do_lint() {
@@ -308,12 +373,17 @@ EOF
 print_menu() {
   cat <<EOF
 ${c_bold}App${c_reset}
-  1) Start development server
-  2) Start production server
+  1) Start development server (+ collab)
+  2) Start production server (+ collab)
   3) Stop development server
   4) Stop production server
-  5) Stop all servers
+  5) Stop all servers (app + collab)
   6) Open app in browser
+
+${c_bold}Document collab${c_reset}
+  17) Start collab server only
+  18) Stop collab server only
+  19) View / follow collab logs
 
 ${c_bold}Build & deps${c_reset}
   7) Install dependencies (npm install)
@@ -359,6 +429,9 @@ run_menu() {
       14) tail_log "$DEV_LOG" "dev"; pause ;;
       15) tail_log "$PROD_LOG" "prod"; pause ;;
       16) ;; # refresh on next loop
+      17) do_start_collab; pause ;;
+      18) do_stop_collab; pause ;;
+      19) tail_log "$COLLAB_LOG" "collab"; pause ;;
       0|q|Q|exit) ok "Goodbye."; exit 0 ;;
       *) err "Invalid option: ${choice:-}"; pause ;;
     esac
@@ -374,11 +447,13 @@ Interactive menu (default):
   ./deploy.sh
 
 Commands:
-  start | start:dev     Start development server
-  start:prod            Start production server
+  start | start:dev     Start development server + collab
+  start:prod            Start production server + collab
+  start:collab          Start document collab server only
   stop | stop:dev       Stop development server
   stop:prod             Stop production server
-  stop:all              Stop all servers
+  stop:collab           Stop collab server
+  stop:all              Stop all servers (app + collab)
   build                 Production build
   install               npm install
   db:setup              Migrate + seed (idempotent)
@@ -388,12 +463,15 @@ Commands:
   lint                  Run ESLint
   logs | logs:dev       Tail dev logs
   logs:prod             Tail prod logs
+  logs:collab           Tail collab logs
   status                Show status and exit
   open                  Open http://localhost:\$PORT
   help                  Show this help
 
 Env:
-  PORT=3000             Override listen port (default 3000)
+  PORT=3000             App listen port (default 3000)
+  COLLAB_PORT=1234      Hocuspocus / Yjs collab port (default 1234)
+  NEXT_PUBLIC_COLLAB_WS_URL   Client WS URL (default ws://localhost:\$COLLAB_PORT)
 EOF
 }
 
@@ -403,8 +481,10 @@ main() {
     "")           run_menu ;;
     start|start:dev) do_start_dev ;;
     start:prod)   do_start_prod ;;
+    start:collab) do_start_collab ;;
     stop|stop:dev) do_stop_dev ;;
     stop:prod)    do_stop_prod ;;
+    stop:collab)  do_stop_collab ;;
     stop:all)     do_stop_all ;;
     build)        do_build ;;
     install)      do_install ;;
@@ -415,6 +495,7 @@ main() {
     lint)         do_lint ;;
     logs|logs:dev) tail_log "$DEV_LOG" "dev" ;;
     logs:prod)    tail_log "$PROD_LOG" "prod" ;;
+    logs:collab)  tail_log "$COLLAB_LOG" "collab" ;;
     status)       show_status ;;
     open)         do_open ;;
     help|-h|--help) usage ;;

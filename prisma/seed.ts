@@ -4,7 +4,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { Pool } from "pg";
 import { COMMITTEE_CHARTER } from "../src/lib/committees";
 import { hashPassword } from "../src/lib/password";
-import { CHURCH_APPROVAL_STACK } from "../src/lib/types";
+import { CHURCH_COMMITTEE_APPROVAL_STACK, CHURCH_DIRECTIVE_APPROVAL_STACK } from "../src/lib/types";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -106,15 +106,12 @@ async function resetDatabase() {
   await prisma.activityLog.deleteMany();
   await prisma.document.deleteMany();
   await prisma.comment.deleteMany();
-  await prisma.report.deleteMany();
   await prisma.attendance.deleteMany();
   await prisma.minutePoint.deleteMany();
   await prisma.meeting.deleteMany();
   await prisma.eventRsvp.deleteMany();
   await prisma.eventDeliverable.deleteMany();
   await prisma.task.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.assignment.deleteMany();
   await prisma.timelineGoal.deleteMany();
   await prisma.event.deleteMany();
   await prisma.committeeFeedback.deleteMany();
@@ -147,7 +144,8 @@ async function ensureIcgOrg() {
           allowCrossCommitteeRead: false,
           requireOversightOnSelfInitiated: true,
           allowSupervisoryAssignMembers: true,
-          approvalStack: CHURCH_APPROVAL_STACK,
+          directiveApprovalStack: CHURCH_DIRECTIVE_APPROVAL_STACK,
+          committeeApprovalStack: CHURCH_COMMITTEE_APPROVAL_STACK,
         },
       },
     },
@@ -160,12 +158,14 @@ async function ensureIcgOrg() {
       organizationId: org.id,
       supervisoryLabel: "Presbytery",
       committeeLabel: "Committee",
-      approvalStack: CHURCH_APPROVAL_STACK,
+      directiveApprovalStack: CHURCH_DIRECTIVE_APPROVAL_STACK,
+      committeeApprovalStack: CHURCH_COMMITTEE_APPROVAL_STACK,
     },
     update: {
       supervisoryLabel: "Presbytery",
       committeeLabel: "Committee",
-      approvalStack: CHURCH_APPROVAL_STACK,
+      directiveApprovalStack: CHURCH_DIRECTIVE_APPROVAL_STACK,
+      committeeApprovalStack: CHURCH_COMMITTEE_APPROVAL_STACK,
     },
   });
 
@@ -347,8 +347,9 @@ async function ensureMembership(
 async function ensureDemoContent(params: {
   committees: any[];
   users: Record<string, { id: string; email: string }>;
+  organizationId: string;
 }) {
-  const { committees, users } = params;
+  const { committees, users, organizationId } = params;
   const now = new Date();
 
   const getComm = (letter: string) => committees.find((c) => c.charterLetter === letter)!;
@@ -366,59 +367,27 @@ async function ensureDemoContent(params: {
   const memberId = users.member.id;
   const executiveId = users.executive.id;
 
-  // 1. PROJECTS
-  const projectData = [
-    { title: "Sanctuary Systems Upgrade", desc: "Sound and seating improvements in the main temple", status: "ACTIVE" as const, commId: estates.id, creatorId: chairId },
-    { title: "New Youth Center Renovation", desc: "Redesigning the old hall into a modern multi-purpose youth facility", status: "ACTIVE" as const, commId: estates.id, creatorId: chairId },
-    { title: "Parsonage Painting & Maintenance", desc: "Routine maintenance and exterior painting of the pastor's residence", status: "COMPLETE" as const, commId: estates.id, creatorId: chairId },
-    { title: "Christmas Cantata 2026 Preparation", desc: "Planning rehearsals, costumes, and publicity for the annual cantata", status: "ACTIVE" as const, commId: worship.id, creatorId: chairId },
-    { title: "Easter Service Planning", desc: "Coordination of Holy Week services and special Easter Sunday choir", status: "COMPLETE" as const, commId: worship.id, creatorId: chairId },
-    { title: "Rural Medical Outreach 2026", desc: "Providing free health screening and medication in rural areas", status: "ACTIVE" as const, commId: missions.id, creatorId: memberId },
-    { title: "Community Sanitation Drive", desc: "Sensitization and cleaning drive in neighboring communities", status: "ON_HOLD" as const, commId: missions.id, creatorId: memberId },
-    { title: "Website & PWA Launch Campaign", desc: "Promotional campaign and onboarding members to the new church platform", status: "ACTIVE" as const, commId: media.id, creatorId: chairId }
-  ];
-
-  const projects: Record<string, any> = {};
-  for (const p of projectData) {
-    let proj = await prisma.project.findFirst({
-      where: { committeeId: p.commId, title: p.title },
-    });
-    if (!proj) {
-      proj = await prisma.project.create({
-        data: {
-          title: p.title,
-          description: p.desc,
-          status: p.status,
-          committeeId: p.commId,
-          createdById: p.creatorId
-        }
-      });
-    }
-    projects[p.title] = proj;
-  }
-
-  // 2. TASKS
+  // 1. TASKS (no Project product path)
   const taskSpecs = [
-    // Estates - Sanctuary Systems Upgrade
     {
       title: "Soundboard Installation",
       description: "Install and test new sanctuary soundboard system",
       status: "IN_PROGRESS" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14),
       committeeId: estates.id,
-      projectId: projects["Sanctuary Systems Upgrade"].id,
       assignedToId: secretaryId,
       createdById: chairId,
     },
     {
       title: "Sanctuary Seating Upgrade",
-      description: "Complete seating refurbishment project",
-      status: "DONE" as const,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3),
+      description:
+        "Directive: complete sanctuary seating refurbishment and close with governance review",
+      status: "IN_PROGRESS" as const,
+      workClass: "DIRECTIVE" as const,
+      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 21),
       committeeId: estates.id,
-      projectId: projects["Sanctuary Systems Upgrade"].id,
-      assignedToId: memberId,
-      createdById: chairId,
+      assignedToId: chairId,
+      createdById: executiveId,
     },
     {
       title: "Permit Application Review",
@@ -426,18 +395,15 @@ async function ensureDemoContent(params: {
       status: "BLOCKED" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7),
       committeeId: estates.id,
-      projectId: projects["Sanctuary Systems Upgrade"].id,
       assignedToId: chairId,
       createdById: chairId,
     },
-    // Estates - Youth Center Renovation
     {
       title: "Electrical Rewiring & Lighting",
       description: "Replace legacy wiring and install low-energy LED fixtures",
       status: "TODO" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 18),
       committeeId: estates.id,
-      projectId: projects["New Youth Center Renovation"].id,
       assignedToId: memberId,
       createdById: chairId,
     },
@@ -447,18 +413,15 @@ async function ensureDemoContent(params: {
       status: "TODO" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 28),
       committeeId: estates.id,
-      projectId: projects["New Youth Center Renovation"].id,
       assignedToId: secretaryId,
       createdById: chairId,
     },
-    // Worship - Cantata
     {
       title: "Choir Rehearsal Schedule",
       description: "Draw up calendar for weekly rehearsals and send to all members",
       status: "IN_PROGRESS" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5),
       committeeId: worship.id,
-      projectId: projects["Christmas Cantata 2026 Preparation"].id,
       assignedToId: secretaryId,
       createdById: chairId,
     },
@@ -468,7 +431,6 @@ async function ensureDemoContent(params: {
       status: "TODO" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 20),
       committeeId: worship.id,
-      projectId: projects["Christmas Cantata 2026 Preparation"].id,
       assignedToId: memberId,
       createdById: chairId,
     },
@@ -478,18 +440,15 @@ async function ensureDemoContent(params: {
       status: "DONE" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 5),
       committeeId: worship.id,
-      projectId: projects["Christmas Cantata 2026 Preparation"].id,
       assignedToId: chairId,
       createdById: chairId,
     },
-    // Missions - Rural Medical Outreach
     {
       title: "Procure Medical Supplies",
       description: "Liaise with pharmaceutical partners to secure essential medicines",
       status: "IN_PROGRESS" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 10),
       committeeId: missions.id,
-      projectId: projects["Rural Medical Outreach 2026"].id,
       assignedToId: memberId,
       createdById: memberId,
     },
@@ -499,7 +458,6 @@ async function ensureDemoContent(params: {
       status: "TODO" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 22),
       committeeId: missions.id,
-      projectId: projects["Rural Medical Outreach 2026"].id,
       assignedToId: memberId,
       createdById: memberId,
     },
@@ -509,11 +467,9 @@ async function ensureDemoContent(params: {
       status: "DONE" as const,
       dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2),
       committeeId: missions.id,
-      projectId: projects["Rural Medical Outreach 2026"].id,
       assignedToId: secretaryId,
       createdById: memberId,
     },
-    // Media
     {
       title: "Weekly Bulletin Design",
       status: "TODO" as const,
@@ -530,7 +486,18 @@ async function ensureDemoContent(params: {
       committeeId: media.id,
       assignedToId: secretaryId,
       createdById: chairId,
-    }
+    },
+    {
+      title: "Youth Center Flooring Spec",
+      description: "Select and order flooring for the renovated youth hall",
+      status: "IN_REVIEW" as const,
+      workClass: "COMMITTEE" as const,
+      approvalStepIndex: 0,
+      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 9),
+      committeeId: estates.id,
+      assignedToId: secretaryId,
+      createdById: chairId,
+    },
   ];
 
   const tasks: Record<string, any> = {};
@@ -539,91 +506,68 @@ async function ensureDemoContent(params: {
       where: { committeeId: spec.committeeId, title: spec.title },
     });
     if (!existing) {
-      existing = await prisma.task.create({ data: spec });
+      existing = await prisma.task.create({ data: spec as never });
+    } else if (spec.title === "Sanctuary Seating Upgrade") {
+      existing = await prisma.task.update({
+        where: { id: existing.id },
+        data: {
+          status: "IN_PROGRESS",
+          workClass: "DIRECTIVE",
+          description: spec.description,
+          assignedToId: chairId,
+          createdById: executiveId,
+        } as never,
+      });
     }
     tasks[spec.title] = existing;
   }
 
-  // 3. ASSIGNMENTS (SUPERVISORY & REFERRALS)
-  const assignmentSpecs = [
-    {
-      title: "Quarterly Financial Stewardship Report",
-      description: "Consolidate and prepare stewardship reports from Q2 for presbytery submission.",
-      source: "SUPERVISORY" as const,
-      status: "IN_PROGRESS" as const,
-      priority: "HIGH" as const,
-      createdById: executiveId,
-      targetCommitteeId: finance.id,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 15),
-    },
-    {
-      title: "Annual budget review presentation",
-      description: "Prepare consolidated budget summary for Presbytery quarterly review",
-      source: "SUPERVISORY" as const,
-      status: "ACCEPTED" as const,
-      priority: "HIGH" as const,
-      createdById: executiveId,
-      targetCommitteeId: finance.id,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 21),
-    },
-    {
-      title: "Outreach Impact Assessment",
-      description: "Document demographic reach and impact metrics of the previous rural outreach program.",
-      source: "SUPERVISORY" as const,
-      status: "ASSIGNED" as const,
-      priority: "NORMAL" as const,
-      createdById: executiveId,
-      targetCommitteeId: missions.id,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30),
-    },
-    // Referrals
-    {
-      title: "Coordinate media coverage for renovation",
-      description: "Estates requests media team support for progress updates",
-      source: "COMMITTEE_REFERRAL" as const,
-      status: "ACCEPTED" as const,
-      priority: "NORMAL" as const,
-      createdById: chairId,
-      targetCommitteeId: media.id,
-      sourceCommitteeId: estates.id,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 10),
-    },
-    {
-      title: "Cantata Streaming Setup",
-      description: "Worship Committee requests media coverage and multi-cam streaming setup for the Cantata.",
-      source: "COMMITTEE_REFERRAL" as const,
-      status: "IN_REVIEW" as const,
-      priority: "HIGH" as const,
-      createdById: chairId,
-      targetCommitteeId: media.id,
-      sourceCommitteeId: worship.id,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 12),
-    },
-    {
-      title: "Funding Request for Medical Outreach",
-      description: "Missions Committee request for 8,500 GHS medical supplies procurement clearance.",
-      source: "COMMITTEE_REFERRAL" as const,
-      status: "CHAIR_APPROVED" as const,
-      priority: "HIGH" as const,
-      createdById: memberId,
-      targetCommitteeId: finance.id,
-      sourceCommitteeId: missions.id,
-      dueDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 4),
-    }
-  ];
-
-  const assignments: Record<string, any> = {};
-  for (const spec of assignmentSpecs) {
-    let existing = await prisma.assignment.findFirst({
-      where: { title: spec.title, targetCommitteeId: spec.targetCommitteeId },
+  // Sanctuary seats walkthrough: Directive → Committee child → optional Personal
+  const directive = tasks["Sanctuary Seating Upgrade"];
+  if (directive) {
+    let committeeChild = await prisma.task.findFirst({
+      where: {
+        parentId: directive.id,
+        title: "Source and install sanctuary seats",
+      },
     });
-    if (!existing) {
-      existing = await prisma.assignment.create({ data: spec });
+    if (!committeeChild) {
+      committeeChild = await prisma.task.create({
+        data: {
+          title: "Source and install sanctuary seats",
+          description: "Committee work under the seating directive",
+          status: "IN_PROGRESS",
+          workClass: "COMMITTEE",
+          committeeId: estates.id,
+          parentId: directive.id,
+          assignedToId: secretaryId,
+          createdById: chairId,
+        } as never,
+      });
     }
-    assignments[spec.title] = existing;
+    let personalStep = await prisma.task.findFirst({
+      where: {
+        parentId: committeeChild.id,
+        title: "Measure aisle clearances",
+      },
+    });
+    if (!personalStep) {
+      await prisma.task.create({
+        data: {
+          title: "Measure aisle clearances",
+          description: "Optional personal step — does not block review",
+          status: "TODO",
+          workClass: "PERSONAL",
+          committeeId: estates.id,
+          parentId: committeeChild.id,
+          assignedToId: memberId,
+          createdById: secretaryId,
+        } as never,
+      });
+    }
   }
 
-  // 4. COMMENTS ON TASKS & ASSIGNMENTS
+  // 2. COMMENTS ON TASKS
   const commentSpecs = [
     {
       body: "The municipal council has requested an updated structural drawing before issuing the permit extension.",
@@ -644,17 +588,17 @@ async function ensureDemoContent(params: {
       entityId: tasks["Soundboard Installation"].id,
     },
     {
-      body: "Initial draft budget outline completed. Preparing comparative tables next.",
-      authorId: chairId,
-      entityType: "ASSIGNMENT" as const,
-      entityId: assignments["Annual budget review presentation"].id,
+      body: "Directive issued — Estates owns seating upgrade through committee review then GS/GO.",
+      authorId: executiveId,
+      entityType: "TASK" as const,
+      entityId: tasks["Sanctuary Seating Upgrade"].id,
     },
     {
-      body: "Please make sure to highlight the increased allocations for youth development in the presentation.",
-      authorId: executiveId,
-      entityType: "ASSIGNMENT" as const,
-      entityId: assignments["Annual budget review presentation"].id,
-    }
+      body: "Sourcing quotes for pew replacements; will send for committee review when install is done.",
+      authorId: secretaryId,
+      entityType: "TASK" as const,
+      entityId: tasks["Sanctuary Seating Upgrade"].id,
+    },
   ];
 
   for (const spec of commentSpecs) {
@@ -673,25 +617,54 @@ async function ensureDemoContent(params: {
       description: "Monthly review of active renovations and projects",
       startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 4, 17, 30),
       committeeId: estates.id,
+      kind: "MEETING" as const,
+      format: "IN_PERSON" as const,
+      location: "Estates office",
     },
     {
       title: "Choir Rehearsal & Sound Check",
       description: "Joint rehearsal of main choir and instrumentalists in the auditorium",
       startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 18, 0),
       committeeId: worship.id,
+      kind: "PROGRAM" as const,
+      format: "IN_PERSON" as const,
+      location: "Main auditorium",
     },
     {
       title: "Outreach Briefing Session",
       description: "Final coordination briefing for medical volunteers",
       startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6, 15, 0),
       committeeId: missions.id,
+      kind: "WORKSHOP" as const,
+      format: "HYBRID" as const,
+      location: "Missions hall",
+    },
+    {
+      title: "Site Working Visit — Sanctuary",
+      description: "Walkthrough of seating upgrade progress with contractor",
+      startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5, 10, 0),
+      committeeId: estates.id,
+      kind: "WORKING_VISIT" as const,
+      format: "IN_PERSON" as const,
+      location: "Sanctuary",
     },
     {
       title: "Presbytery General Assembly",
       description: "Quarterly review of all charter committees",
       startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 21, 9, 0),
       committeeId: committees[0].id,
-    }
+      kind: "MEETING" as const,
+      format: "IN_PERSON" as const,
+    },
+    {
+      title: "Worship Committee Kickoff Meeting",
+      description: "Kickoff for worship planning season",
+      startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 10, 18, 0),
+      committeeId: worship.id,
+      kind: "MEETING" as const,
+      format: "IN_PERSON" as const,
+      location: "Worship office",
+    },
   ];
 
   const events: Record<string, any> = {};
@@ -701,6 +674,16 @@ async function ensureDemoContent(params: {
     });
     if (!existing) {
       existing = await prisma.event.create({ data: spec });
+    } else {
+      existing = await prisma.event.update({
+        where: { id: existing.id },
+        data: {
+          kind: spec.kind,
+          format: spec.format,
+          location: spec.location ?? null,
+          description: spec.description,
+        },
+      });
     }
     events[spec.title] = existing;
   }
@@ -729,7 +712,10 @@ async function ensureDemoContent(params: {
     }
   }
 
-  // 6. MEETINGS & MINUTEPONTS & ATTENDANCE
+  // 6. MEETINGS & MINUTEPONTS & ATTENDANCE (linked to Events)
+  const estatesReviewEvent = events["Estates Committee Review Meeting"];
+  const worshipKickoffEvent = events["Worship Committee Kickoff Meeting"];
+
   let estatesMeeting = await prisma.meeting.findFirst({
     where: { committeeId: estates.id, title: "Estates Monthly Review" },
   });
@@ -739,9 +725,15 @@ async function ensureDemoContent(params: {
         title: "Estates Monthly Review",
         date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
         committeeId: estates.id,
+        eventId: estatesReviewEvent?.id ?? null,
         createdById: secretaryId,
         approved: true,
       },
+    });
+  } else if (estatesReviewEvent && !estatesMeeting.eventId) {
+    estatesMeeting = await prisma.meeting.update({
+      where: { id: estatesMeeting.id },
+      data: { eventId: estatesReviewEvent.id },
     });
   }
   await prisma.attendance.createMany({
@@ -777,9 +769,15 @@ async function ensureDemoContent(params: {
         title: "Worship Committee Kickoff Meeting",
         date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 10),
         committeeId: worship.id,
+        eventId: worshipKickoffEvent?.id ?? null,
         createdById: secretaryId,
         approved: true,
       },
+    });
+  } else if (worshipKickoffEvent && !worshipMeeting.eventId) {
+    worshipMeeting = await prisma.meeting.update({
+      where: { id: worshipMeeting.id },
+      data: { eventId: worshipKickoffEvent.id },
     });
   }
   await prisma.attendance.createMany({
@@ -891,12 +889,38 @@ async function ensureDemoContent(params: {
   // 9. LIBRARY DOCUMENTS
   const documentSpecs = [
     {
+      title: "Estates & Projects — Terms of Reference",
+      tag: "TOR" as const,
+      source: "CREATED" as const,
+      body: `<h2>Terms of Reference</h2>
+<p><strong>Committee:</strong> Estates &amp; Projects</p>
+<p><strong>Effective date:</strong> 2026-01-01</p>
+<h3>Purpose</h3>
+<p>Oversee parish buildings, grounds, and capital works; ensure safe, functional facilities for worship and ministry.</p>
+<h3>Scope</h3>
+<p>Sanctuary, halls, grounds, utilities, and approved renovation projects within budget.</p>
+<h3>Responsibilities</h3>
+<ol>
+<li>Inspect facilities quarterly and log defects</li>
+<li>Plan and execute approved capital projects</li>
+<li>Coordinate contractors and volunteer work parties</li>
+<li>Report progress and risks to the Presbytery</li>
+<li>Maintain an asset and maintenance register</li>
+</ol>
+<h3>Reporting to governance</h3>
+<p>Submit status updates at Presbytery meetings; escalate blocked work promptly.</p>`,
+      committeeId: estates.id,
+      uploadedById: chairId,
+      organizationId,
+    },
+    {
       title: "Estates Q1 Infrastructure Report",
       tag: "REPORT" as const,
       source: "CREATED" as const,
       body: "Comprehensive report of the structural integrity and inventory audit of all parish buildings.",
       committeeId: estates.id,
       uploadedById: chairId,
+      organizationId,
     },
     {
       title: "Church Music & Liturgy Guidelines 2026",
@@ -905,6 +929,7 @@ async function ensureDemoContent(params: {
       body: "Official guidelines for liturgical responses, choir rehearsals, and special event music coordination.",
       committeeId: worship.id,
       uploadedById: chairId,
+      organizationId,
     },
     {
       title: "Rural Health Medical Outreach Project Charter",
@@ -913,6 +938,7 @@ async function ensureDemoContent(params: {
       body: "Project charter outlining targets, volunteers, legal releases, and budget breakdown for the outreach.",
       committeeId: missions.id,
       uploadedById: memberId,
+      organizationId,
     }
   ];
 
@@ -938,23 +964,20 @@ async function ensureDemoContent(params: {
       entityType: "TASK" as const,
       entityId: tasks["Sanctuary Seating Upgrade"].id,
       action: "STATUS_UPDATED",
-      actorId: memberId,
-      metadata: { title: "Sanctuary Seating Upgrade", status: "DONE" },
+      actorId: executiveId,
+      metadata: {
+        title: "Sanctuary Seating Upgrade",
+        status: "IN_PROGRESS",
+        workClass: "DIRECTIVE",
+      },
     },
     {
-      entityType: "ASSIGNMENT" as const,
-      entityId: assignments["Annual budget review presentation"].id,
-      action: "ACCEPTED",
-      actorId: chairId,
-      metadata: { title: "Annual budget review presentation" },
+      entityType: "TASK" as const,
+      entityId: tasks["Sanctuary Seating Upgrade"].id,
+      action: "CREATED",
+      actorId: executiveId,
+      metadata: { title: "Sanctuary Seating Upgrade", workClass: "DIRECTIVE" },
     },
-    {
-      entityType: "ASSIGNMENT" as const,
-      entityId: assignments["Cantata Streaming Setup"].id,
-      action: "SUBMITTED",
-      actorId: chairId,
-      metadata: { title: "Cantata Streaming Setup" },
-    }
   ];
 
   for (const spec of activitySpecs) {
@@ -1043,6 +1066,7 @@ async function main() {
   await ensureDemoContent({
     committees,
     users,
+    organizationId: org.id,
   });
 
   console.log("Seed complete (idempotent):", {

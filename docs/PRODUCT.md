@@ -1,10 +1,12 @@
 # Steward Product Vision & Upgrade Map
 
 **Status:** Canonical product direction  
-**Last updated:** 2026-07-17  
+**Last updated:** 2026-07-27  
 **Supersedes:** [prd.md](../prd.md) for product scope and domain model (PRD retained for historical church-demo context and UX/touch rules)
 
 This document is the single main for Steward upgrades. Implementation phases follow the map below; revise this file when product decisions change.
+
+> **Demo-first simplification (2026-07):** Nav, Home, and the work object model are redefined in [SIMPLIFICATION.md](./SIMPLIFICATION.md). That doc **supersedes** conflicting Phase 7e/7f guidance (shell peers, My work, Assignment cascade as product path). Prefer clean breaks over dual-write; see the breaking-change policy there.
 
 ---
 
@@ -16,9 +18,9 @@ This document is the single main for Steward upgrades. Implementation phases fol
 
 It is not a generic project-management clone. The differentiator is:
 
-> **Structure → mandate → work → draft report → supervisory approval → final report → close.**
+> **Structure → mandate → work → review → close.**
 
-Committee work tools (tasks, schedule, minutes, documents) support that loop; they are not the product’s identity.
+Committee work tools (tasks, events, minutes, documents) support that loop; they are not the product’s identity. **Task** is the only first-class work object (see [SIMPLIFICATION.md](./SIMPLIFICATION.md)).
 
 The current codebase is a mature **single-tenant church demo**. Keep its committee workspace strengths; replace the hardcoded Presbytery/charter spine with a multi-tenant, configurable organization model.
 
@@ -43,9 +45,10 @@ The current codebase is a mature **single-tenant church demo**. Keep its committ
 | **Supervisory secretary** | supervisory title (e.g. GS) | Day-to-day admin, document funnel, agenda owner — **label via template**, not a hardcoded enum | Main app |
 | **Committee** | `Committee` | Working group node with configurable titles | Committee workspace |
 | **Organization** | `Organization` | Tenant | Org picker + scoped workspace |
-| **Approval stack** | org-configured ordered steps | Who must review before work is officially accepted (e.g. Chair → Secretary) | Admin + workflows |
-| **My work** | personal hub | Cross-committee tasks, assignments, projects, meetings for the signed-in user | Org shell |
-| **Schedule item** | `Event` with `kind` | Meeting or event; minutes live only on meetings | Schedule |
+| **Approval stacks** | `directiveApprovalStack` + `committeeApprovalStack` | Who must review before work is officially accepted (4-step directive / 2-step committee; personal = 0) | Admin + Task review |
+| **Home** | stats overview | Org-wide or “my groups” altitudes; not an action inbox | Org shell peer |
+| **Task** | only first-class work object | Directives / Work / Personal via `workClass` (UI labels; enums DIRECTIVE \| COMMITTEE \| PERSONAL) | Tasks peer |
+| **Event** | `Event` with `kind` | Meeting or event; minutes live only on meetings | Events peer |
 
 **Rules:**
 
@@ -148,23 +151,68 @@ erDiagram
 | `Project` | From supervisory assignment **or** committee-initiated |
 | `Report` | Draft/final lifecycle linked to project (and optionally assignment) |
 
-Existing work objects stay: Task, Event, Meeting, Document, Assignment (source renamed as above).
+Primary work object: **Task** (`workClass`: DIRECTIVE | COMMITTEE | PERSONAL). Events and Documents support the loop. Assignment/Project are retired from the member product path (demo break — see [SIMPLIFICATION.md](./SIMPLIFICATION.md)).
 
 **Every tenant-scoped row gets `organizationId`.**
+
+### Domain vocabulary (schema.org thin layer)
+
+Reuse schema.org **habits**, not JSON-LD markup. Stable kinds, soft labels, Person ≠ Role, named links, Actions for work lifecycle. Product language stays Directive / Work / Review — this spine is the conceptual map for reviews and new features.
+
+```mermaid
+flowchart LR
+  Org[Organization]
+  Person[Person_User]
+  Role[Role_membership]
+  Event[Event]
+  Work[CreativeWork_Doc]
+  Action[Action_Task]
+  Person --> Role
+  Role --> Org
+  Org --> Event
+  Org --> Action
+  Work -->|"about / evidence / partOf"| Action
+  Work -->|"about"| Event
+  Action -->|"hasPart"| Action
+```
+
+| Kind | Steward today | Rule |
+|------|---------------|------|
+| Organization | `Organization`, `Committee`, `SupervisoryGroup` | Same shape; labels via settings/templates |
+| Person | `User` | Never put Chair/Head on the user row |
+| Role | `*Member`, `DocumentMember`, org membership | Named role in a group for a span |
+| Event | `Event` (+ legacy `Meeting`) | One Event; `kind` soft-classifies |
+| CreativeWork | `LibraryDocument` (+ file `Document` as MediaObject) | One library doc; tags = genre |
+| Action | `Task` + approval stacks | Work/review/close; stacks = ordered potential actions |
+
+**Reuse-before-invent:** a new feature must map to Organization / Person / Role / Event / CreativeWork / Action, or justify a Steward-only concept (tenancy, RBAC, approval stack).
+
+**Soft classification:** prefer `kind` / `workClass` / `tag` / `format` over new models.
+
+**Named links:** library docs attach with `DocumentLink.relation` = `ABOUT` | `EVIDENCE` | `PART_OF` (defaults: Task → EVIDENCE, Event → ABOUT). Not anonymous FKs in the mental model.
+
+**Legacy:** `Meeting` is Event(`MEETING`) + minutes CreativeWork; collapse later under Phase 7d — do not add new Meeting-only APIs.
+
+**Freeze rules:**
+
+- Do **not** introduce a new first-class peer (Report, Assignment, Project, Minutes tab)
+- Minutes stay **about** an Event; evidence stays **evidence** on a Task
+- Approval stacks stay org settings JSON (potential actions), not new tables
+- `Document` (upload attachment) stays MediaObject-like; `LibraryDocument` stays the CreativeWork
+
+Code mirror: [src/lib/domain-vocab.ts](../src/lib/domain-vocab.ts).
 
 ---
 
 ## 5. Governance loop (differentiator)
 
-1. Supervisory assigns project/assignment to a committee **or** committee initiates project (per policy).
-2. Committee executes via tasks / schedule / minutes.
-3. Committee submits **draft report**.
-4. Supervisory reviews → return or approve as **final**.
-5. On final approval, project is **closed** (or marked complete and closed in the same action).
+1. Governance **Assign** creates a **Directive Task** (person and/or committee).
+2. Committee executes via committee/personal child Tasks + Events + Docs.
+3. Committee children are accepted (2-step review); optional personal steps complete only.
+4. Directive walks the 4-step review ladder; all committee children must be accepted before Directive close.
+5. Final accept closes the Directive.
 
-Supervisory overview dashboard = today’s Presbytery / overall dashboard, generalized.
-
-Report states: `DRAFT` → `RETURNED` / `FINAL`. Approving FINAL closes (or marks closable) the linked project.
+Home = role-aware Task/Event stats overview (org-wide vs my groups). Act in **Tasks**, not Home.
 
 ---
 
@@ -224,16 +272,17 @@ Session shape: `user + activeOrganizationId` (unset until the user picks an org)
 | User ↔ org | Users may belong to **many** orgs; session has one **active organization** |
 | Post-login entry | **Org picker landing** — list orgs + roles, then enter |
 | Demo migration target | Existing church demo → organization **`ICGC`** |
-| Committee nesting | **Flat** in v1 |
+| Committee nesting | **Flat** committees; Task nesting up to **2 levels** (Directive → Committee → Personal) |
 | Supervisory bodies per org | **One** in v1; schema may allow more later |
-| Project oversight | Assigned work always requires supervisory review; self-initiated follows `requireOversightOnSelfInitiated` |
+| Work oversight | Directive Tasks use 4-step stack; committee Tasks use 2-step; personal = complete only |
 | Org Admin vs creator | Creator is initial Org Admin; role is **transferable** |
 | Platform entry | `/super` (same app, separate gate) |
 | Structure builder v1 | Tree builder; click node → invite |
-| Reports | First-class `Report`: DRAFT → RETURNED / FINAL; approve closes project |
-| Nav chrome | Shell-first; committee sections in sidebar only (≤5); minutes under Schedule meetings |
-| Approval stack | Configurable ordered steps per org |
+| Docs vs Reports | Prefer library docs + Task evidence; Reports not a nav peer |
+| Nav chrome | **Five peers:** Home · Tasks · Events · Docs · Messages; Admin via UserMenu |
+| Approval stacks | `directiveApprovalStack` (4) + `committeeApprovalStack` (2); Org Admin configurable |
 | AI | Suggest → accept; never mutates governance state alone |
+| Demo breaks | Prefer delete/redirect/reseed over dual-write — [SIMPLIFICATION.md](./SIMPLIFICATION.md) |
 
 ---
 
@@ -258,11 +307,11 @@ A fuller extract of church-specific PRD content may later live at `docs/template
 
 ### Keep (reuse)
 
-- Tasks, projects, assignment status machine
-- Minutes / schedule / RSVP
+- Task + Event + Document surfaces (reshaped)
+- Minutes nested under Events meetings / RSVP
 - Invites / OTP
 - Permission *shape* (global + scoped title + supervisory head)
-- Mobile-first committee UI, attention / KPI patterns
+- Mobile-first shell, attention / KPI patterns (rebound to Tasks)
 
 ### Generalize
 
@@ -344,42 +393,37 @@ Discovery from Template A (ICGC) interviews; product stays multi-tenant and labe
 - **Visibility ≠ required approval:** a head title may `canViewAll` + optional approve without being a mandatory stack step.
 - ICGC seed: “General Overseer” (head, full visibility, optional approve) and “General Secretary” (admin funnel).
 
-#### 7b. Configurable approval stacks
+#### 7b. Configurable approval stacks → **superseded by dual stacks**
 
-- Org Admin defines an ordered **approval stack** (JSON steps bound to committee titles or supervisory titles).
-- Assignment escalate and report review walk the stack.
-- AI is never a stack step.
+See [SIMPLIFICATION.md](./SIMPLIFICATION.md): `directiveApprovalStack` (4) + `committeeApprovalStack` (2). AI is never a stack step.
 
-#### 7c. Assignment cascade
+#### 7c. Assignment cascade → **superseded by Task workClass**
 
-1. Supervisory directive → **person** and/or committee.
-2. Accountable owner may create a **child** assignment scoped to a committee.
-3. Owner escalates upward → approval stack.
-4. Ready items can be **tabled** as agenda items on a supervisory meeting.
+Governance Assign creates a **Directive Task**. Committee children + optional personal steps nest under it. Review ladders 4/2/0. Assignment is not a product path.
 
-#### 7d. Schedule + minutes
+#### 7d. Events + minutes
 
-- One **Schedule** surface: `MEETING` | `EVENT`, with format (in-person / virtual / hybrid), location / join URL, agenda, attachments.
-- **Minutes are not a top-level area** — they live on Schedule meetings only.
-- Upcoming / previous lists by date.
+- One **Events** surface (`/events`): `MEETING` | `EVENT`, with format, location / join URL, agenda, attachments.
+- **Minutes are not a top-level area** — they live on meeting Events only.
+- Upcoming / previous lists by date. Legacy `/schedule` redirects to `/events`.
 
-#### 7e. Durable shell-first UI
+#### 7e. Durable shell-first UI → **superseded by five peers**
 
 | Layer | Pattern | Contents |
 |-------|---------|----------|
-| Org shell | Sidebar + mobile dock | Home, My work, committees, Reports, Messages, Documents, Admin |
-| Committee | ≤5 sections **in the shell only** | Overview, Board, Projects, Assignments, Schedule |
+| Org shell | Sidebar + mobile dock | **Home · Tasks · Events · Docs · Messages** |
+| Group context | Switcher + **All** | Filters Tasks/Events/Docs; cards show `{Group} · {My role}` |
 | Nested | Detail pages | Meeting → minutes; Document Studio; AI panels |
 
-- Remove horizontal committee tab strip as primary IA (no second sitemap).
-- Never add Messages, Documents, My work, or AI as committee peers.
-- Growth rule: nest or promote to shell — never a sixth committee peer.
+- No horizontal committee tab strip; no My work / Reports / Assignments / Projects peers.
+- Admin only via UserMenu for Org Admin.
+- Growth rule: nest under a peer — never a sixth peer for pipeline.
 
-#### 7f. My work, messaging, documents
+#### 7f. Home, messaging, documents → **superseded**
 
-- **My work:** member-centric inbox across tasks, assignments, projects, meetings.
+- **Home:** stats/overview only (two altitudes); not My work inbox.
 - **Messages:** member↔member and committee threads (separate from entity Comments).
-- **Documents:** library + comments on `LIBRARY_DOCUMENT` / attachments; GS “funnel” = stack routing, not a separate DMS.
+- **Documents:** collaborative Document Studio (roles: owner/editor/reviewer/approver; anchored comments; TipTap+Yjs co-edit for editors); GS “funnel” = status/approver routing, not a separate DMS. Task remains the primary governance work object.
 
 #### 7g. AI assists (suggest → accept)
 
@@ -391,17 +435,20 @@ Discovery from Template A (ICGC) interviews; product stays multi-tenant and labe
 
 ---
 
-## 13. Locked defaults (Phase 7 additions)
+## 13. Locked defaults (Phase 7 + Simplification)
 
 | Decision | Default |
 |----------|---------|
 | Supervisory dual roles | Titles + capabilities; ICGC GO/GS via seed labels only |
-| Approval order | Admin-configurable stack per org |
-| Assignment targets | Person and/or committee; referral chain for cascade |
-| Minutes | Nested under Schedule meetings only |
-| Navigation | Shell-first; ≤5 committee sections; no horizontal tab sitemap |
+| Approval order | Dual stacks: directive (4) + committee (2); personal = 0 |
+| Work targets | Directive Task → person and/or committee; nested committee/personal children |
+| Minutes | Nested under Events meetings only |
+| Navigation | Five peers: Home · Tasks · Events · Docs · Messages |
+| Multi-hat | Cards always `{Group} · {My role}`; group switcher includes All |
+| Home | Overview altitudes only; act in Tasks |
 | AI | Suggest → human accept; never an approval-stack step |
 | Messaging vs comments | Threads for people/groups; Comments on work entities |
+| Demo policy | Breaking deletes/redirects/reseed OK — [SIMPLIFICATION.md](./SIMPLIFICATION.md) |
 
 ---
 

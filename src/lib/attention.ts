@@ -4,19 +4,13 @@ import {
   type SessionUser,
 } from "@/lib/auth";
 import type { AttentionKind, AttentionUrgency } from "@/lib/types";
+import { canApproveMinutes, canLogMinutes } from "@/lib/types";
 import {
-  canAcceptAssignments,
-  canApproveAssignmentReview,
-  canApproveMinutes,
-  canCloseAssignment,
-  canCreatePresbyteryAssignment,
-  canEditTasks,
-  canLogMinutes,
-  canViewAllCommittees,
-  getCommitteeTitle,
-  isPresbyteryMember,
-} from "@/lib/types";
-import { committeePath } from "@/lib/navigation";
+  canActOnApprovalStep,
+  currentApprovalStep,
+} from "@/lib/approval-stack";
+import { getOrgSettings } from "@/lib/settings";
+import { tasksPath } from "@/lib/navigation";
 
 export type AttentionItem = {
   id: string;
@@ -33,8 +27,6 @@ export type AttentionItem = {
   };
 };
 
-const ASSIGNED_ESCALATION_DAYS = 7;
-
 function isOverdue(dueDate: Date | null | undefined): boolean {
   if (!dueDate) return false;
   return dueDate.getTime() < Date.now();
@@ -44,12 +36,6 @@ function isDueSoon(dueDate: Date | null | undefined): boolean {
   if (!dueDate) return false;
   const inThreeDays = Date.now() + 3 * 24 * 60 * 60 * 1000;
   return dueDate.getTime() <= inThreeDays && dueDate.getTime() >= Date.now();
-}
-
-function staleAssigned(createdAt: Date): boolean {
-  const days =
-    (Date.now() - createdAt.getTime()) / (24 * 60 * 60 * 1000);
-  return days >= ASSIGNED_ESCALATION_DAYS;
 }
 
 export async function buildAttentionItems(
@@ -65,8 +51,7 @@ export async function buildAttentionItems(
       parentId: null,
     },
     include: {
-      committee: { select: { name: true } },
-      project: { select: { title: true } },
+      committee: { select: { name: true, organizationId: true } },
     },
     orderBy: { dueDate: "asc" },
   });
@@ -78,8 +63,8 @@ export async function buildAttentionItems(
       kind: "TASK",
       urgency: overdue ? "NOW" : isDueSoon(task.dueDate) ? "SOON" : "NOW",
       title: task.title,
-      subtitle: `${task.committee.name}${task.project ? ` · ${task.project.title}` : ""}`,
-      href: `${committeePath(task.committeeId, "tasks")}?task=${task.id}`,
+      subtitle: task.committee.name,
+      href: tasksPath(task.committeeId, { taskId: task.id }),
       primaryAction: {
         label: "Mark done",
         action: "mark_done",
@@ -89,96 +74,53 @@ export async function buildAttentionItems(
     });
   }
 
+  // Tasks waiting for this user's review on the current ladder step
+  const orgId = user.orgContext?.organizationId;
+  if (orgId) {
+    const settings = await getOrgSettings(orgId);
+    const inReview = await prisma.task.findMany({
+      where: {
+        status: "IN_REVIEW",
+        parentId: null,
+        workClass: { in: ["DIRECTIVE", "COMMITTEE"] },
+        committee: { organizationId: orgId },
+      },
+      include: {
+        committee: { select: { id: true, name: true } },
+      },
+      take: 40,
+    });
+
+    for (const task of inReview) {
+      const stack =
+        task.workClass === "DIRECTIVE"
+          ? settings.directiveApprovalStack
+          : settings.committeeApprovalStack;
+      const step = currentApprovalStep(stack, task.approvalStepIndex);
+      if (!canActOnApprovalStep(perm, step, task.committeeId)) continue;
+
+      items.push({
+        id: `review-${task.id}`,
+        kind: "REVIEW",
+        urgency: "NOW",
+        title: task.title,
+        subtitle: `Awaiting your review · ${task.committee.name}`,
+        href: tasksPath(task.committeeId, {
+          taskId: task.id,
+          filter: "waiting-review",
+        }),
+        primaryAction: {
+          label: "Review",
+          action: "approve_step",
+          entityType: "TASK",
+          entityId: task.id,
+        },
+      });
+    }
+  }
+
   for (const membership of user.committeeMemberships) {
     const { committeeId, title } = membership;
-
-    if (canAcceptAssignments(perm, committeeId)) {
-      const inbox = await prisma.assignment.findMany({
-        where: {
-          targetCommitteeId: committeeId,
-          status: "ASSIGNED",
-        },
-        include: {
-          targetCommittee: { select: { name: true } },
-          createdBy: { select: { name: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      for (const a of inbox) {
-        items.push({
-          id: `assign-inbox-${a.id}`,
-          kind: a.source === "COMMITTEE_REFERRAL" ? "REFERRAL" : "ASSIGNMENT",
-          urgency: staleAssigned(a.createdAt) || isOverdue(a.dueDate) ? "NOW" : "NOW",
-          title: a.title,
-          subtitle: `From ${a.createdBy.name} · ${a.targetCommittee?.name ?? "Personal"}`,
-          href: `/assignments/${a.id}?action=receive`,
-          primaryAction: {
-            label: "Receive",
-            action: "accept",
-            entityType: "ASSIGNMENT",
-            entityId: a.id,
-          },
-        });
-      }
-
-      const accepted = await prisma.assignment.findMany({
-        where: {
-          targetCommitteeId: committeeId,
-          status: "ACCEPTED",
-          projects: { none: {} },
-        },
-        include: {
-          targetCommittee: { select: { name: true } },
-          createdBy: { select: { name: true } },
-        },
-        orderBy: { updatedAt: "desc" },
-      });
-
-      for (const a of accepted) {
-        items.push({
-          id: `assign-create-${a.id}`,
-          kind: a.source === "COMMITTEE_REFERRAL" ? "REFERRAL" : "ASSIGNMENT",
-          urgency: "NOW",
-          title: a.title,
-          subtitle: `Received · create a project · ${a.targetCommittee?.name ?? "Personal"}`,
-          href: `/assignments/${a.id}?action=create-project`,
-          primaryAction: {
-            label: "Create project",
-            action: "create_project",
-            entityType: "ASSIGNMENT",
-            entityId: a.id,
-          },
-        });
-      }
-    }
-
-    if (canApproveAssignmentReview(perm, committeeId)) {
-      const reviews = await prisma.assignment.findMany({
-        where: {
-          targetCommitteeId: committeeId,
-          status: "IN_REVIEW",
-        },
-        include: { targetCommittee: { select: { name: true } } },
-      });
-
-      for (const a of reviews) {
-        items.push({
-          id: `assign-review-${a.id}`,
-          kind: "REVIEW",
-          urgency: "NOW",
-          title: a.title,
-          subtitle: `Awaiting chair approval · ${a.targetCommittee?.name ?? "Personal"}`,
-          href: `/assignments/${a.id}?action=approve`,
-          primaryAction: {
-            label: "Approve",
-            action: "approve",
-            entityType: "ASSIGNMENT",
-            entityId: a.id,
-          },
-        });
-      }
-    }
 
     if (canApproveMinutes(perm, committeeId)) {
       const pendingMinutes = await prisma.meeting.findMany({
@@ -189,8 +131,8 @@ export async function buildAttentionItems(
 
       for (const m of pendingMinutes) {
         const href = m.eventId
-          ? `${committeePath(committeeId, "schedule")}/${m.eventId}`
-          : committeePath(committeeId, "schedule");
+          ? `/events/${m.eventId}`
+          : `/events?committeeId=${encodeURIComponent(committeeId)}`;
         items.push({
           id: `minutes-${m.id}`,
           kind: "MINUTES",
@@ -220,8 +162,8 @@ export async function buildAttentionItems(
 
       for (const m of recentUnfiled) {
         const href = m.eventId
-          ? `${committeePath(committeeId, "schedule")}/${m.eventId}`
-          : committeePath(committeeId, "schedule");
+          ? `/events/${m.eventId}`
+          : `/events?committeeId=${encodeURIComponent(committeeId)}`;
         items.push({
           id: `minutes-file-${m.id}`,
           kind: "MINUTES",
@@ -231,84 +173,6 @@ export async function buildAttentionItems(
           href,
         });
       }
-    }
-  }
-
-  if (canCreatePresbyteryAssignment(perm)) {
-    const toClose = await prisma.assignment.findMany({
-      where: {
-        createdById: user.id,
-        status: "CHAIR_APPROVED",
-      },
-      include: { targetCommittee: { select: { name: true } } },
-    });
-
-    for (const a of toClose) {
-      items.push({
-        id: `assign-close-${a.id}`,
-        kind: "ASSIGNMENT",
-        urgency: "NOW",
-        title: a.title,
-        subtitle: `Awaiting your close · ${a.targetCommittee?.name ?? "Personal"}`,
-        href: `/assignments/${a.id}?action=close`,
-        primaryAction: {
-          label: "Close",
-          action: "close",
-          entityType: "ASSIGNMENT",
-          entityId: a.id,
-        },
-      });
-    }
-
-    const drafts = await prisma.assignment.findMany({
-      where: { createdById: user.id, status: "DRAFT" },
-      include: { targetCommittee: { select: { name: true } } },
-    });
-
-    for (const a of drafts) {
-      items.push({
-        id: `assign-draft-${a.id}`,
-        kind: "ASSIGNMENT",
-        urgency: "SOON",
-        title: a.title,
-        subtitle: `Draft · ${a.targetCommittee?.name ?? "Personal"}`,
-        href: `/assignments/${a.id}`,
-        primaryAction: {
-          label: "Assign",
-          action: "assign",
-          entityType: "ASSIGNMENT",
-          entityId: a.id,
-        },
-      });
-    }
-  }
-
-  if (isPresbyteryMember(perm) || canViewAllCommittees(perm)) {
-    const inProgress = await prisma.assignment.findMany({
-      where: {
-        status: { in: ["IN_PROGRESS", "RETURNED", "ACCEPTED"] },
-        ...(canCloseAssignment(perm, user.id)
-          ? {}
-          : { NOT: { createdById: user.id } }),
-      },
-      include: {
-        targetCommittee: { select: { name: true } },
-        createdBy: { select: { name: true } },
-      },
-      take: 10,
-      orderBy: { updatedAt: "desc" },
-    });
-
-    for (const a of inProgress) {
-      if (items.some((i) => i.id === `assign-wait-${a.id}`)) continue;
-      items.push({
-        id: `assign-wait-${a.id}`,
-        kind: "ASSIGNMENT",
-        urgency: "WAITING",
-        title: a.title,
-        subtitle: `${a.status.replace(/_/g, " ")} · ${a.targetCommittee?.name ?? "Personal"}`,
-        href: `/assignments/${a.id}`,
-      });
     }
   }
 

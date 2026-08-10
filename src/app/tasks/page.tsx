@@ -1,33 +1,40 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { AuthGate } from "@/components/AuthGate";
+import { TasksView } from "@/components/views/TasksView";
 import { useApp } from "@/providers/AppProvider";
-import { committeePath } from "@/lib/navigation";
+import { isAllGroups } from "@/lib/navigation";
 
-function LegacyTasksRedirect() {
-  const router = useRouter();
-  const { user } = useApp();
+function TasksContent() {
+  const { activeCommitteeId, setActiveCommitteeId } = useApp();
+  const searchParams = useSearchParams();
+  const queryCommitteeId = searchParams.get("committeeId");
 
   useEffect(() => {
-    const last =
-      localStorage.getItem("unitycommit-committee") ??
-      user?.committeeIds[0];
-    if (last) {
-      router.replace(committeePath(last, "tasks"));
-    } else {
-      router.replace("/");
+    if (queryCommitteeId && !isAllGroups(queryCommitteeId)) {
+      setActiveCommitteeId(queryCommitteeId);
     }
-  }, [router, user]);
+  }, [queryCommitteeId, setActiveCommitteeId]);
 
-  return <p className="text-muted text-center py-12">Redirecting…</p>;
+  const committeeId = useMemo(() => {
+    if (queryCommitteeId && !isAllGroups(queryCommitteeId)) {
+      return queryCommitteeId;
+    }
+    if (activeCommitteeId && !isAllGroups(activeCommitteeId)) {
+      return activeCommitteeId;
+    }
+    return null;
+  }, [queryCommitteeId, activeCommitteeId]);
+
+  return <TasksView committeeId={committeeId} />;
 }
 
 export default function TasksPage() {
   return (
     <AuthGate>
-      <LegacyTasksRedirect />
+      <TasksContent />
     </AuthGate>
   );
 }

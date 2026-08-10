@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const logs = await prisma.activityLog.findMany({
     where: {
       ...(actorId ? { actorId } : {}),
-      ...(entityType ? { entityType: entityType as "ASSIGNMENT" | "PROJECT" | "TASK" } : {}),
+      ...(entityType ? { entityType: entityType as "TASK" | "LIBRARY_DOCUMENT" | "DOCUMENT" } : {}),
     },
     include: { actor: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },

@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { TouchButton } from "@/components/TouchButton";
 import { useApp } from "@/providers/AppProvider";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
+import { tasksPath } from "@/lib/navigation";
 
 type InviteData = {
   token: string;
@@ -148,7 +149,7 @@ export default function InvitePage({
       if (!res.ok) throw new Error(data.error ?? "Could not set password");
       establishSession(data);
       setStep("done");
-      router.replace(`/c/${invite.committee.id}`);
+      router.replace(tasksPath(invite.committee.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not set password");
     } finally {

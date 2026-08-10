@@ -1,16 +1,13 @@
 import type { AlertItem } from "@/components/AlertFeed";
 import type { DashboardStat } from "@/components/DashboardStatsPanel";
 import {
-  committeePath,
-  meetingPath,
-  presbyteryAssignmentsPath,
+  eventsPath,
   tasksPath,
 } from "@/lib/navigation";
 import type { PermissionUser } from "@/lib/types";
 import {
-  canAcceptAssignments,
   canApproveMinutes,
-  canCreatePresbyteryAssignment,
+  canCreateDirective,
   canViewAllCommittees,
   getCommitteeTitle,
 } from "@/lib/types";
@@ -37,22 +34,26 @@ export function buildOverallDashboardStats({
   alerts,
   totals,
   pendingMinutes,
-  openAssignments,
+  openDirectives,
   awaitingCloseCount,
-  assignmentDrafts,
+  directiveDrafts,
+  upcomingEvents = 0,
+  myOpenTasks = 0,
   perm,
 }: {
   stats: CommitteeStat[];
   alerts: AlertItem[];
   totals: { total: number; done: number; blocked: number };
   pendingMinutes: number;
-  openAssignments: number;
+  openDirectives: number;
   awaitingCloseCount: number;
-  assignmentDrafts: number;
+  directiveDrafts: number;
+  upcomingEvents?: number;
+  myOpenTasks?: number;
   perm: PermissionUser | null;
 }): { attention: DashboardStat[]; snapshot: DashboardStat[] } {
   const isExecutive = perm ? canViewAllCommittees(perm) : false;
-  const canManageAssignments = perm ? canCreatePresbyteryAssignment(perm) : false;
+  const canManageDirectives = perm ? canCreateDirective(perm) : false;
   const { mine: myMinutesAlerts } = minutesAlertsForUser(alerts, perm);
   const myPendingMinutes = myMinutesAlerts.length;
   const churchPendingMinutes = Math.max(0, pendingMinutes - myPendingMinutes);
@@ -91,38 +92,39 @@ export function buildOverallDashboardStats({
     });
   }
 
-  if (canManageAssignments) {
-    if (awaitingCloseCount > 0) {
-      attention.push({
-        key: "close",
-        label: "Ready for you to close",
-        value: awaitingCloseCount,
-        hint: "You issued these — chair has approved",
-        href: "#dashboard-awaiting-close",
-        accent: "gold",
-        active: true,
-      });
-    }
-
-    if (assignmentDrafts > 0) {
-      attention.push({
-        key: "drafts",
-        label: "Directive drafts",
-        value: assignmentDrafts,
-        hint: "Finish and send to committees",
-        href: presbyteryAssignmentsPath("open", true),
-        accent: "gold",
-        active: true,
-      });
-    }
+  if (myOpenTasks > 0) {
+    attention.push({
+      key: "my-tasks",
+      label: "Your open work",
+      value: myOpenTasks,
+      hint: "Assigned to you",
+      href: tasksPath(null, { filter: "needs-me" }),
+      accent: "gold",
+      active: true,
+    });
   }
+
+  if (canManageDirectives && openDirectives > 0) {
+    attention.push({
+      key: "in-review",
+      label: "Work in review",
+      value: openDirectives,
+      hint: "Waiting on approval ladders",
+      href: tasksPath(null, { filter: "waiting-review" }),
+      accent: "gold",
+      active: true,
+    });
+  }
+
+  void awaitingCloseCount;
+  void directiveDrafts;
 
   if (!isExecutive && actionableAwaiting > 0) {
     attention.push({
       key: "awaiting-action",
-      label: "Tasks waiting on you",
+      label: "Work waiting on you",
       value: actionableAwaiting,
-      hint: "In committees you chair",
+      hint: "In groups you chair",
       href: links.awaiting,
       accent: "gold",
       active: true,
@@ -133,40 +135,40 @@ export function buildOverallDashboardStats({
 
   snapshot.push({
     key: "committees",
-    label: isExecutive ? "Committees overseen" : "Your committees",
+    label: isExecutive ? "Groups overseen" : "Your groups",
     value: stats.length,
-    hint: "Tap to browse each one",
+    hint: "Tap a card to open Work",
     href: links.committees,
     accent: "charcoal",
   });
 
   snapshot.push({
     key: "progress",
-    label: "Task progress",
+    label: "Work progress",
     value: totals.total ? `${totals.done}/${totals.total}` : "—",
-    hint: totals.total ? `${pct}% complete overall` : "No tasks yet",
-    href: links.tasksComplete,
+    hint: totals.total ? `${pct}% complete overall` : "No work yet",
+    href: tasksPath(),
     accent: "lime",
   });
+
+  if (upcomingEvents > 0) {
+    snapshot.push({
+      key: "events",
+      label: "Upcoming events",
+      value: upcomingEvents,
+      hint: "Meetings and events ahead",
+      href: eventsPath(),
+      accent: "charcoal",
+    });
+  }
 
   if (isExecutive && churchPendingMinutes > 0) {
     snapshot.push({
       key: "minutes-chairs",
       label: "Minutes with chairs",
       value: churchPendingMinutes,
-      hint: "Filed by secretaries — chairs approve, not presbytery",
+      hint: "Filed by secretaries — chairs approve",
       href: "#dashboard-alerts",
-      accent: "charcoal",
-    });
-  }
-
-  if (isExecutive && openAssignments > 0) {
-    snapshot.push({
-      key: "pipeline",
-      label: "Directives in progress",
-      value: openAssignments,
-      hint: "Church-wide pipeline — mostly for visibility",
-      href: presbyteryAssignmentsPath("open"),
       accent: "charcoal",
     });
   }
@@ -174,20 +176,12 @@ export function buildOverallDashboardStats({
   if (watchAwaiting > 0) {
     snapshot.push({
       key: "awaiting-watch",
-      label: isExecutive ? "Tasks waiting elsewhere" : "Tasks waiting on others",
+      label: isExecutive ? "Work waiting elsewhere" : "Work waiting on others",
       value: watchAwaiting,
       hint: isExecutive
-        ? "Committees handle these — you can view only"
-        : "Outside committees you chair",
+        ? "Groups handle these — you can view"
+        : "Outside groups you chair",
       href: links.awaiting,
-      accent: "charcoal",
-    });
-  } else if (!isExecutive && totals.blocked === 0) {
-    snapshot.push({
-      key: "awaiting-clear",
-      label: "Tasks waiting on others",
-      value: 0,
-      hint: "Nothing on hold",
       accent: "charcoal",
     });
   }
@@ -198,7 +192,7 @@ export function buildOverallDashboardStats({
 export function buildCommitteeDashboardStats({
   committeeId,
   stats,
-  pendingAssignments,
+  pendingTasks,
   perm,
 }: {
   committeeId: string;
@@ -208,12 +202,10 @@ export function buildCommitteeDashboardStats({
     blocked: number;
     activeProjects?: number;
   } | null;
-  pendingAssignments: number;
+  pendingTasks: number;
   perm: PermissionUser | null;
 }): { attention: DashboardStat[]; snapshot: DashboardStat[] } {
   const links = buildCommitteeKpiLinks(committeeId, stats);
-  const canInbox =
-    perm && committeeId ? canAcceptAssignments(perm, committeeId) : false;
   const canEdit =
     perm && committeeId
       ? getCommitteeTitle(perm, committeeId) === "CHAIR" ||
@@ -225,28 +217,22 @@ export function buildCommitteeDashboardStats({
   const openTasks = stats ? stats.total - stats.done : 0;
   const pct = stats?.total ? Math.round((stats.done / stats.total) * 100) : 0;
 
-  if (canInbox) {
+  if (pendingTasks > 0) {
     attention.push({
       key: "inbox",
-      label: "New assignments",
-      value: pendingAssignments,
-      hint:
-        pendingAssignments > 0
-          ? "Receive assignments that need action"
-          : "No pending assignments",
-      href:
-        pendingAssignments > 0
-          ? committeePath(committeeId, "assignments")
-          : undefined,
+      label: "Needs attention",
+      value: pendingTasks,
+      hint: "Open Work to review",
+      href: tasksPath(committeeId, { filter: "needs-me" }),
       accent: "gold",
-      active: pendingAssignments > 0,
+      active: true,
     });
   }
 
   if (canEdit && stats && stats.blocked > 0) {
     attention.push({
       key: "awaiting",
-      label: "Tasks waiting on others",
+      label: "Work waiting on others",
       value: stats.blocked,
       hint: "Tap to review on the board",
       href: links.awaiting,
@@ -257,7 +243,7 @@ export function buildCommitteeDashboardStats({
 
   snapshot.push({
     key: "progress",
-    label: "Task progress",
+    label: "Work progress",
     value: stats ? `${stats.done}/${stats.total}` : "—",
     hint: stats?.total ? `${pct}% complete` : undefined,
     href: links.tasksDone,
@@ -268,17 +254,8 @@ export function buildCommitteeDashboardStats({
     key: "open",
     label: "Still in progress",
     value: openTasks,
-    hint: "Open tasks on the board",
+    hint: "Open work",
     href: links.openTasks,
-    accent: "charcoal",
-  });
-
-  snapshot.push({
-    key: "projects",
-    label: "Active projects",
-    value: stats?.activeProjects ?? 0,
-    hint: "Ongoing committee work",
-    href: links.projects,
     accent: "charcoal",
   });
 
@@ -313,17 +290,14 @@ function buildOverallKpiLinks({
         ? "#dashboard-alerts"
         : undefined;
 
-  const myMinutesHref =
-    firstMyMinutes?.committeeId && firstMyMinutes.meetingId
-      ? meetingPath(firstMyMinutes.committeeId, firstMyMinutes.meetingId)
-      : undefined;
+  const myMinutesHref = firstMyMinutes?.href;
 
   return {
     committees: stats.length > 0 ? "#dashboard-committees" : undefined,
-    tasksComplete: stats.length > 0 ? "#dashboard-committees" : undefined,
+    tasksComplete: tasksPath(),
     awaiting: awaitingHref,
     myPendingMinutes: myMinutesHref,
-    openAssignments: isExecutive ? presbyteryAssignmentsPath("open") : undefined,
+    openDirectives: isExecutive ? tasksPath(null, { filter: "waiting-review" }) : undefined,
   };
 }
 
@@ -332,12 +306,11 @@ function buildCommitteeKpiLinks(
   stats: { blocked: number } | null,
 ) {
   return {
-    tasksDone: committeePath(committeeId, "tasks"),
+    tasksDone: tasksPath(committeeId),
     awaiting:
       stats && stats.blocked > 0
         ? tasksPath(committeeId, { column: "BLOCKED", filter: "all" })
         : undefined,
-    openTasks: `${committeePath(committeeId, "tasks")}?filter=all`,
-    projects: committeePath(committeeId, "projects"),
+    openTasks: tasksPath(committeeId, { filter: "all" }),
   };
 }

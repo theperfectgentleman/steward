@@ -7,7 +7,16 @@ import {
 } from "@/lib/auth";
 import { requireEventCommitteeId } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
+import {
+  buildR2Key,
+  deleteR2Object,
+  isR2Configured,
+  putR2Object,
+  sanitizeStorageFileName,
+} from "@/lib/r2";
 import { canEditTasks } from "@/lib/types";
+
+const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function GET(
   _request: Request,
@@ -63,6 +72,79 @@ export async function POST(
 
   const access = assertCommitteeAccess(auth.user, event.committeeId!);
   if (access) return access;
+
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("multipart/form-data")) {
+    if (!isR2Configured()) {
+      return NextResponse.json(
+        { error: "File storage is not configured on this server" },
+        { status: 503 },
+      );
+    }
+
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+    const titleInput = (formData.get("title") as string | null)?.trim();
+
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json(
+        { error: "File too large (max 25 MB)" },
+        { status: 400 },
+      );
+    }
+
+    const title = titleInput || file.name.replace(/\.[^/.]+$/, "") || file.name;
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const safeName = sanitizeStorageFileName(file.name);
+    const mimeType = file.type || "application/octet-stream";
+
+    const deliverable = await prisma.eventDeliverable.create({
+      data: {
+        eventId,
+        title,
+        kind: "FILE",
+        content: file.name,
+        fileName: file.name,
+        mimeType,
+        createdById: auth.user.id,
+      },
+      include: { createdBy: { select: { id: true, name: true } } },
+    });
+
+    const committee = await prisma.committee.findUnique({
+      where: { id: event.committeeId! },
+      select: { organizationId: true },
+    });
+    const orgId = committee?.organizationId ?? "unknown";
+
+    const storageKey = buildR2Key(
+      "orgs",
+      orgId,
+      "events",
+      eventId,
+      "deliverables",
+      deliverable.id,
+      safeName,
+    );
+
+    await putR2Object({
+      key: storageKey,
+      body: buffer,
+      contentType: mimeType,
+    });
+
+    const updated = await prisma.eventDeliverable.update({
+      where: { id: deliverable.id },
+      data: { storageKey },
+      include: { createdBy: { select: { id: true, name: true } } },
+    });
+
+    return NextResponse.json(updated, { status: 201 });
+  }
 
   const body = (await request.json()) as {
     title?: string;
@@ -134,6 +216,10 @@ export async function DELETE(
   });
   if (!existing) {
     return NextResponse.json({ error: "Deliverable not found" }, { status: 404 });
+  }
+
+  if (existing.storageKey) {
+    await deleteR2Object(existing.storageKey);
   }
 
   await prisma.eventDeliverable.delete({ where: { id: deliverableId } });

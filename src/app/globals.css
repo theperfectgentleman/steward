@@ -77,6 +77,15 @@ body {
   min-height: 44px;
 }
 
+/* Hide scrollbars on horizontal filter strips */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .sheet-enter {
   animation: sheet-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -295,6 +304,42 @@ body {
 .rich-text-content em,
 .rich-text-editor__content em {
   font-style: italic;
+}
+
+mark.doc-comment-highlight {
+  background: color-mix(in srgb, #fbbf24 45%, transparent);
+  border-bottom: 2px solid #f59e0b;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0 1px;
+}
+
+mark.doc-comment-highlight:hover {
+  background: color-mix(in srgb, #fbbf24 65%, transparent);
+}
+
+.collaboration-carets__caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1px solid;
+  border-right: 1px solid;
+  word-break: normal;
+  pointer-events: none;
+}
+
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px 4px 4px 0;
+  color: white;
+  white-space: nowrap;
+  user-select: none;
 }
 
 /* Date inputs — entire field opens picker, not just the icon */

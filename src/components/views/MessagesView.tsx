@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MessageSquarePlus, Send, X } from "lucide-react";
 import { TouchButton } from "@/components/TouchButton";
+import { PeoplePickerField } from "@/components/people/PeoplePickerField";
 import { PageShimmer } from "@/components/loading/PageShimmer";
 import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
 import { formatDateTime } from "@/lib/dates";
@@ -42,7 +43,6 @@ type ThreadDetail = {
   }[];
 };
 
-type OrgUser = { id: string; name: string };
 type CommitteeOption = { id: string; name: string; charterLetter: string | null };
 
 function threadTitle(
@@ -80,8 +80,8 @@ export function MessagesView() {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedUserName, setSelectedUserName] = useState("");
   const [selectedCommitteeId, setSelectedCommitteeId] = useState("");
-  const [users, setUsers] = useState<OrgUser[]>([]);
   const [committees, setCommittees] = useState<CommitteeOption[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -98,25 +98,13 @@ export function MessagesView() {
   useEffect(() => {
     setLoading(true);
     loadThreads().finally(() => setLoading(false));
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setUsers(
-            data
-              .filter((u: OrgUser) => u.id !== user?.id)
-              .map((u: OrgUser) => ({ id: u.id, name: u.name })),
-          );
-        }
-      })
-      .catch(() => undefined);
     fetch("/api/committees")
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data)) setCommittees(data);
       })
       .catch(() => undefined);
-  }, [loadThreads, user?.id]);
+  }, [loadThreads]);
 
   const openThread = useCallback(async (threadId: string) => {
     setComposeOpen(false);
@@ -152,6 +140,7 @@ export function MessagesView() {
     setComposeSubject("");
     setComposeBody("");
     setSelectedUserId("");
+    setSelectedUserName("");
     setSelectedCommitteeId("");
     setComposeKind("DIRECT");
   };
@@ -341,18 +330,23 @@ export function MessagesView() {
         </div>
 
         {composeKind === "DIRECT" ? (
-          <select
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            className={FORM_FIELD_CLASS}
-          >
-            <option value="">Select member…</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
+          <PeoplePickerField
+            mode="single"
+            excludeIds={user?.id ? [user.id] : []}
+            selectedIds={selectedUserId ? [selectedUserId] : []}
+            nameById={
+              selectedUserId && selectedUserName
+                ? { [selectedUserId]: selectedUserName }
+                : {}
+            }
+            placeholder="Select member…"
+            title="Message someone"
+            onConfirm={(ids, people) => {
+              const id = ids[0] ?? "";
+              setSelectedUserId(id);
+              setSelectedUserName(people[0]?.name ?? "");
+            }}
+          />
         ) : (
           <select
             value={selectedCommitteeId}

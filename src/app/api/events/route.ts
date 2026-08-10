@@ -9,8 +9,9 @@ import { enrichEventsWithProgress } from "@/lib/event-queries";
 import { prisma } from "@/lib/prisma";
 import { canEditTasks, canViewAllCommittees } from "@/lib/types";
 import type { ScheduleFormat, ScheduleKind } from "@/lib/types";
+import { EVENT_KINDS } from "@/lib/event-kinds";
 
-const KINDS: ScheduleKind[] = ["MEETING", "EVENT"];
+const KINDS: ScheduleKind[] = EVENT_KINDS;
 const FORMATS: ScheduleFormat[] = ["IN_PERSON", "VIRTUAL", "HYBRID"];
 
 export async function GET(request: Request) {
@@ -21,25 +22,39 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const global = searchParams.get("global") === "true";
+  const mineScope = searchParams.get("scope") === "mine" && !committeeId && !global;
 
   if (global) {
     if (!canViewAllCommittees(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
+  } else if (mineScope) {
+    // user's committees (or all if canViewAll)
   } else if (committeeId) {
     const access = assertCommitteeAccess(auth.user, committeeId);
     if (access) return access;
   } else {
     return NextResponse.json(
-      { error: "committeeId or global=true required" },
+      { error: "committeeId or scope=mine required" },
       { status: 400 },
     );
   }
 
+  const committeeIds =
+    mineScope && !canViewAllCommittees(perm)
+      ? auth.user.committeeMemberships.map((m) => m.committeeId)
+      : undefined;
+
   const events = await prisma.event.findMany({
-    where: global ? undefined : { committeeId: committeeId! },
+    where: global
+      ? undefined
+      : mineScope
+        ? committeeIds
+          ? { committeeId: { in: committeeIds } }
+          : undefined
+        : { committeeId: committeeId! },
     include: {
-      committee: { select: { name: true, charterLetter: true } },
+      committee: { select: { id: true, name: true, charterLetter: true } },
       rsvps: {
         include: { user: { select: { id: true, name: true } } },
       },
@@ -74,7 +89,7 @@ export async function POST(request: Request) {
   }
 
   const kind: ScheduleKind =
-    body.kind && KINDS.includes(body.kind) ? body.kind : "EVENT";
+    body.kind && KINDS.includes(body.kind) ? body.kind : "OTHER";
   const format: ScheduleFormat =
     body.format && FORMATS.includes(body.format) ? body.format : "IN_PERSON";
 
@@ -108,7 +123,7 @@ export async function POST(request: Request) {
         agenda: body.agenda?.trim() || null,
       },
       include: {
-        committee: { select: { name: true, charterLetter: true } },
+        committee: { select: { id: true, name: true, charterLetter: true } },
         rsvps: true,
         meeting: true,
         agendaItems: { orderBy: { order: "asc" } },
@@ -140,7 +155,7 @@ export async function POST(request: Request) {
       return tx.event.findUniqueOrThrow({
         where: { id: created.id },
         include: {
-          committee: { select: { name: true, charterLetter: true } },
+          committee: { select: { id: true, name: true, charterLetter: true } },
           rsvps: true,
           meeting: true,
           agendaItems: { orderBy: { order: "asc" } },

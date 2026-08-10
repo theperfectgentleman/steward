@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import {
-  CHURCH_APPROVAL_STACK,
-  DEFAULT_APPROVAL_STACK,
+  CHURCH_COMMITTEE_APPROVAL_STACK,
+  CHURCH_DIRECTIVE_APPROVAL_STACK,
+  DEFAULT_COMMITTEE_APPROVAL_STACK,
+  DEFAULT_DIRECTIVE_APPROVAL_STACK,
   type ApprovalStackStep,
   type OrganizationSettings,
 } from "@/lib/types";
@@ -29,8 +31,12 @@ function mapSettings(row: {
   allowCrossCommitteeRead: boolean;
   requireOversightOnSelfInitiated: boolean;
   allowSupervisoryAssignMembers: boolean;
-  approvalStack: unknown;
+  directiveApprovalStack?: unknown;
+  committeeApprovalStack?: unknown;
 }): OrganizationSettings {
+  const committeeStack = parseApprovalStack(row.committeeApprovalStack);
+  const directiveStack = parseApprovalStack(row.directiveApprovalStack);
+
   return {
     supervisoryLabel: row.supervisoryLabel,
     committeeLabel: row.committeeLabel,
@@ -38,7 +44,14 @@ function mapSettings(row: {
     allowCrossCommitteeRead: row.allowCrossCommitteeRead,
     requireOversightOnSelfInitiated: row.requireOversightOnSelfInitiated,
     allowSupervisoryAssignMembers: row.allowSupervisoryAssignMembers,
-    approvalStack: parseApprovalStack(row.approvalStack),
+    directiveApprovalStack:
+      directiveStack.length > 0
+        ? directiveStack
+        : DEFAULT_DIRECTIVE_APPROVAL_STACK,
+    committeeApprovalStack:
+      committeeStack.length > 0
+        ? committeeStack
+        : DEFAULT_COMMITTEE_APPROVAL_STACK,
   };
 }
 
@@ -49,7 +62,8 @@ export async function getOrgSettings(
     where: { organizationId },
     create: {
       organizationId,
-      approvalStack: DEFAULT_APPROVAL_STACK,
+      directiveApprovalStack: DEFAULT_DIRECTIVE_APPROVAL_STACK,
+      committeeApprovalStack: DEFAULT_COMMITTEE_APPROVAL_STACK,
     },
     update: {},
   });
@@ -74,13 +88,41 @@ export async function updateOrgSettings(
     where: { organizationId },
     create: {
       organizationId,
-      ...data,
-      approvalStack: data.approvalStack ?? DEFAULT_APPROVAL_STACK,
+      supervisoryLabel: data.supervisoryLabel,
+      committeeLabel: data.committeeLabel,
+      committeeBudgetsEnabled: data.committeeBudgetsEnabled,
+      allowCrossCommitteeRead: data.allowCrossCommitteeRead,
+      requireOversightOnSelfInitiated: data.requireOversightOnSelfInitiated,
+      allowSupervisoryAssignMembers: data.allowSupervisoryAssignMembers,
+      directiveApprovalStack:
+        data.directiveApprovalStack ?? DEFAULT_DIRECTIVE_APPROVAL_STACK,
+      committeeApprovalStack:
+        data.committeeApprovalStack ?? DEFAULT_COMMITTEE_APPROVAL_STACK,
     },
     update: {
-      ...data,
-      ...(data.approvalStack !== undefined
-        ? { approvalStack: data.approvalStack }
+      ...(data.supervisoryLabel !== undefined
+        ? { supervisoryLabel: data.supervisoryLabel }
+        : {}),
+      ...(data.committeeLabel !== undefined
+        ? { committeeLabel: data.committeeLabel }
+        : {}),
+      ...(data.committeeBudgetsEnabled !== undefined
+        ? { committeeBudgetsEnabled: data.committeeBudgetsEnabled }
+        : {}),
+      ...(data.allowCrossCommitteeRead !== undefined
+        ? { allowCrossCommitteeRead: data.allowCrossCommitteeRead }
+        : {}),
+      ...(data.requireOversightOnSelfInitiated !== undefined
+        ? { requireOversightOnSelfInitiated: data.requireOversightOnSelfInitiated }
+        : {}),
+      ...(data.allowSupervisoryAssignMembers !== undefined
+        ? { allowSupervisoryAssignMembers: data.allowSupervisoryAssignMembers }
+        : {}),
+      ...(data.directiveApprovalStack !== undefined
+        ? { directiveApprovalStack: data.directiveApprovalStack }
+        : {}),
+      ...(data.committeeApprovalStack !== undefined
+        ? { committeeApprovalStack: data.committeeApprovalStack }
         : {}),
     },
   });
@@ -98,4 +140,10 @@ export async function updateAppSettings(
   return updateOrgSettings(first.organizationId, data);
 }
 
-export { parseApprovalStack, CHURCH_APPROVAL_STACK, DEFAULT_APPROVAL_STACK };
+export {
+  parseApprovalStack,
+  CHURCH_COMMITTEE_APPROVAL_STACK,
+  CHURCH_DIRECTIVE_APPROVAL_STACK,
+  DEFAULT_COMMITTEE_APPROVAL_STACK,
+  DEFAULT_DIRECTIVE_APPROVAL_STACK,
+};

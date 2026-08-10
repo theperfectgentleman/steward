@@ -25,7 +25,8 @@ export type OrgContext = {
     allowCrossCommitteeRead: boolean;
     requireOversightOnSelfInitiated: boolean;
     allowSupervisoryAssignMembers: boolean;
-    approvalStack: import("@/lib/types").ApprovalStackStep[];
+    directiveApprovalStack: import("@/lib/types").ApprovalStackStep[];
+    committeeApprovalStack: import("@/lib/types").ApprovalStackStep[];
   };
 };
 
@@ -49,21 +50,13 @@ function toPermissionUser(user: SessionUser): PermissionUser {
           canApproveOptional: supervisory.canApproveOptional,
         }
       : null,
-    presbyteryMembership: supervisory
-      ? {
-          isHead: supervisory.isHead,
-          title: supervisory.title,
-          customTitle: supervisory.customTitle,
-          canViewAll: supervisory.canViewAll,
-          canApproveOptional: supervisory.canApproveOptional,
-        }
-      : null,
     orgSettings: user.orgContext
       ? {
           allowCrossCommitteeRead: user.orgContext.settings.allowCrossCommitteeRead,
           requireOversightOnSelfInitiated:
             user.orgContext.settings.requireOversightOnSelfInitiated,
-          approvalStack: user.orgContext.settings.approvalStack,
+          directiveApprovalStack: user.orgContext.settings.directiveApprovalStack,
+          committeeApprovalStack: user.orgContext.settings.committeeApprovalStack,
         }
       : null,
   };
@@ -138,11 +131,17 @@ export async function getSessionUser() {
             allowSupervisoryAssignMembers:
               activeMembership.organization.settings
                 .allowSupervisoryAssignMembers,
-            approvalStack: Array.isArray(
-              activeMembership.organization.settings.approvalStack,
+            directiveApprovalStack: Array.isArray(
+              activeMembership.organization.settings.directiveApprovalStack,
             )
               ? (activeMembership.organization.settings
-                  .approvalStack as import("@/lib/types").ApprovalStackStep[])
+                  .directiveApprovalStack as unknown as import("@/lib/types").ApprovalStackStep[])
+              : [],
+            committeeApprovalStack: Array.isArray(
+              activeMembership.organization.settings.committeeApprovalStack,
+            )
+              ? (activeMembership.organization.settings
+                  .committeeApprovalStack as unknown as import("@/lib/types").ApprovalStackStep[])
               : [],
           },
         }

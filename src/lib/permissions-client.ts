@@ -60,6 +60,5 @@ export function toPermissionUser(user: {
     orgRole: user.organization?.orgRole ?? null,
     committeeMemberships: user.committeeMemberships,
     supervisoryMembership: supervisory,
-    presbyteryMembership: supervisory,
   };
 }

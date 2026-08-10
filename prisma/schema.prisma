@@ -257,6 +257,9 @@ model User {
   status          UserStatus @default(PENDING)
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
+  /// Send batched attention/inbox digest emails when items need action
+  emailAttentionEnabled Boolean  @default(true)
+  lastAttentionEmailAt  DateTime?
   /// Legacy/global hint; authoritative org role is OrganizationMembership.role
   role            UserRole   @default(ORG_PARTICIPANT)
   createdAt       DateTime   @default(now())

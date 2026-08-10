@@ -14,9 +14,6 @@ import { prisma } from "@/lib/prisma";
 
 type AssistBody = {
   type?: AssistType;
-  assignmentId?: string;
-  projectId?: string;
-  reportId?: string;
   eventId?: string;
   title?: string;
   description?: string;
@@ -34,61 +31,6 @@ async function loadContext(
     agenda: body.agenda,
     notes: body.context,
   };
-
-  if (body.assignmentId) {
-    const assignment = await prisma.assignment.findFirst({
-      where: {
-        id: body.assignmentId,
-        OR: [
-          { targetCommittee: { organizationId: orgId } },
-          { sourceCommittee: { organizationId: orgId } },
-        ],
-      },
-    });
-    if (assignment) {
-      ctx.title = ctx.title ?? assignment.title;
-      ctx.description = ctx.description ?? assignment.description;
-      ctx.assignmentStatus = assignment.status;
-      ctx.priority = assignment.priority;
-    }
-  }
-
-  if (body.projectId) {
-    const project = await prisma.project.findFirst({
-      where: {
-        id: body.projectId,
-        committee: { organizationId: orgId },
-      },
-      include: {
-        tasks: {
-          where: { parentId: null },
-          select: { title: true, status: true },
-          take: 20,
-        },
-      },
-    });
-    if (project) {
-      ctx.title = ctx.title ?? project.title;
-      ctx.description = ctx.description ?? project.description;
-      ctx.projectStatus = project.status;
-      ctx.tasks = project.tasks
-        .map((t) => `${t.title} (${t.status})`)
-        .join("; ");
-    }
-  }
-
-  if (body.reportId) {
-    const report = await prisma.report.findFirst({
-      where: { id: body.reportId, organizationId: orgId },
-      include: { project: { select: { title: true, description: true } } },
-    });
-    if (report) {
-      ctx.title = ctx.title ?? report.title;
-      ctx.description = ctx.description ?? report.body;
-      ctx.projectTitle = report.project.title;
-      ctx.projectDescription = report.project.description;
-    }
-  }
 
   if (body.eventId) {
     const event = await prisma.event.findFirst({
@@ -119,7 +61,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "type must be report_draft, approval_brief, agenda_suggest, minutes_draft, or assignment_scope",
+          "type must be approval_brief, agenda_suggest, or minutes_draft",
       },
       { status: 400 },
     );

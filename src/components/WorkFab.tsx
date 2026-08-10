@@ -1,64 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { BottomSheet } from "@/components/BottomSheet";
 import { TouchButton } from "@/components/TouchButton";
 import { useApp } from "@/providers/AppProvider";
 import { toPermissionUser } from "@/lib/permissions-client";
 import {
-  canCreatePresbyteryAssignment,
-  canCreateReferral,
+  canCreateDirective,
   canEditTasks,
 } from "@/lib/types";
-import { committeePath, parseCommitteeId } from "@/lib/navigation";
+import { tasksPath } from "@/lib/navigation";
 
 export function WorkFab() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, activeCommitteeId } = useApp();
   const [open, setOpen] = useState(false);
 
   if (!user) return null;
 
-  const committeeId = parseCommitteeId(pathname) ?? activeCommitteeId;
-  if (!committeeId) return null;
+  const queryCommitteeId = searchParams.get("committeeId");
+  const committeeId =
+    queryCommitteeId ?? activeCommitteeId;
+  if (!committeeId || committeeId === "all") return null;
 
-  // Only on committee work surfaces (not admin / assignment detail)
-  const onCommitteeWork =
-    pathname.startsWith(`/c/${committeeId}`) &&
-    !pathname.includes("/schedule/");
-  if (!onCommitteeWork) return null;
+  const onWorkPeer =
+    pathname.startsWith("/tasks") ||
+    pathname.startsWith("/documents") ||
+    pathname.startsWith("/events");
+  if (!onWorkPeer) return null;
 
   const perm = toPermissionUser(user);
   const canTask = canEditTasks(perm, committeeId);
-  const canRefer = canCreateReferral(perm, committeeId);
-  const canAssign = canCreatePresbyteryAssignment(perm);
+  const canAssign = canCreateDirective(perm);
 
-  if (!canTask && !canRefer && !canAssign) return null;
-
-  const section = pathname.split("/").pop() ?? "tasks";
-
-  const primary = () => {
-    if (section === "projects" && canTask) {
-      router.push(committeePath(committeeId, "projects"));
-      setOpen(true);
-      return;
-    }
-    if (section === "assignments" && canRefer) {
-      router.push(committeePath(committeeId, "assignments"));
-      setOpen(true);
-      return;
-    }
-    setOpen(true);
-  };
+  if (!canTask && !canAssign) return null;
 
   return (
     <>
       <button
         type="button"
-        onClick={primary}
+        onClick={() => setOpen(true)}
         className="lg:hidden fixed bottom-24 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg safe-area-pb"
         aria-label="Create work"
       >
@@ -68,38 +53,14 @@ export function WorkFab() {
       <BottomSheet open={open} onClose={() => setOpen(false)} title="Create">
         <div className="space-y-3 p-1">
           {canTask && (
-            <>
-              <TouchButton
-                className="w-full"
-                onClick={() => {
-                  setOpen(false);
-                  router.push(`${committeePath(committeeId, "tasks")}?create=1`);
-                }}
-              >
-                New task
-              </TouchButton>
-              <TouchButton
-                variant="secondary"
-                className="w-full"
-                onClick={() => {
-                  setOpen(false);
-                  router.push(`${committeePath(committeeId, "projects")}?create=1`);
-                }}
-              >
-                New project
-              </TouchButton>
-            </>
-          )}
-          {canRefer && (
             <TouchButton
-              variant="ghost"
               className="w-full"
               onClick={() => {
                 setOpen(false);
-                router.push(`${committeePath(committeeId, "assignments")}?refer=1`);
+                router.push(tasksPath(committeeId, { create: true }));
               }}
             >
-              Refer to another committee
+              New work
             </TouchButton>
           )}
           {canAssign && (
@@ -108,15 +69,12 @@ export function WorkFab() {
               className="w-full"
               onClick={() => {
                 setOpen(false);
-                router.push("/?assign=1");
+                router.push(tasksPath(committeeId, { assign: true }));
               }}
             >
-              Presbytery assignment
+              Assign directive
             </TouchButton>
           )}
-          <p className="text-xs text-muted pt-2">
-            Assignments come from Presbytery. Referrals are chair-to-chair. Feedback is for member suggestions.
-          </p>
         </div>
       </BottomSheet>
     </>

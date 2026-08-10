@@ -1,6 +1,9 @@
 # Optional local / Dokploy Compose stack.
 # Prefer Dokploy "Database" + "Application (Docker image)" instead of building on the VPS.
 # This compose file only PULLS images — it does not build on the server.
+#
+# The app image runs Next.js (:3000) and Hocuspocus document collab (:1234) in one container.
+# Set COLLAB_WS_URL to a URL browsers can reach (ws://localhost:1234 locally; wss://… in prod).
 
 services:
   db:
@@ -28,6 +31,7 @@ services:
         condition: service_healthy
     ports:
       - "${APP_PORT:-3000}:3000"
+      - "${COLLAB_HOST_PORT:-1234}:1234"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-steward}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-stewarddb}?sslmode=disable
       GROQ_API_KEY: ${GROQ_API_KEY:-}
@@ -40,6 +44,31 @@ services:
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      # Brevo email (SMTP or REST API — see .env.example)
+      BREVO_SMTP_HOST: ${BREVO_SMTP_HOST:-}
+      BREVO_SMTP_PORT: ${BREVO_SMTP_PORT:-587}
+      BREVO_USER: ${BREVO_USER:-}
+      BREVO_PASSWORD: ${BREVO_PASSWORD:-}
+      BREVO_FROM_EMAIL: ${BREVO_FROM_EMAIL:-}
+      BREVO_FROM_NAME: ${BREVO_FROM_NAME:-Steward}
+      BREVO_REPLY_TO: ${BREVO_REPLY_TO:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      # Cloudflare R2 document storage
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_KEY_PREFIX: ${R2_KEY_PREFIX:-steward}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      # Document live co-editing (Hocuspocus)
+      COLLAB_PORT: ${COLLAB_PORT:-1234}
+      # Browser-facing WebSocket URL (must be reachable from the user's machine/network)
+      COLLAB_WS_URL: ${COLLAB_WS_URL:-ws://localhost:1234}
+      NEXT_PUBLIC_COLLAB_WS_URL: ${NEXT_PUBLIC_COLLAB_WS_URL:-ws://localhost:1234}
+      COLLAB_TOKEN_SECRET: ${COLLAB_TOKEN_SECRET:-change-me-in-production}
+      # Set DISABLE_COLLAB=1 to run Next only
+      DISABLE_COLLAB: ${DISABLE_COLLAB:-}
 
 volumes:
   steward_pg:

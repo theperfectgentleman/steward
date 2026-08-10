@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build — run this in CI (GitHub Actions). Dokploy only pulls the final image.
+# Runtime starts Next.js (:3000) + Hocuspocus document collab (:1234) via docker-entrypoint.js
 
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
@@ -37,14 +38,25 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV COLLAB_PORT=1234
 
 # Next.js standalone server
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Prisma CLI + config deps for `prisma migrate deploy` (not bundled in Next standalone)
-RUN npm install prisma@7.8.0 dotenv --ignore-scripts && npm cache clean --force \
+# Prisma CLI + collab runtime deps (not in Next standalone)
+# Pin versions to match package.json where practical
+RUN npm install \
+    prisma@7.8.0 \
+    dotenv \
+    @hocuspocus/server@2.15.3 \
+    yjs@13.6.31 \
+    @prisma/adapter-pg@7.8.0 \
+    @prisma/client-runtime-utils@7.8.0 \
+    pg \
+    --ignore-scripts \
+  && npm cache clean --force \
   && chown -R nextjs:nodejs /app/node_modules
 
 # Prisma: schema, migrations, generated client, config
@@ -53,16 +65,17 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/package.json ./package.json
 
-COPY --chown=nextjs:nodejs scripts/docker-entrypoint.js /app/docker-entrypoint.js
+# Entrypoint + collab server (plain Node CJS — no tsx in production)
+COPY --chown=nextjs:nodejs scripts/docker-entrypoint.js /app/scripts/docker-entrypoint.js
+COPY --chown=nextjs:nodejs scripts/collab-server.cjs /app/scripts/collab-server.cjs
 # Runtime secrets: baked from Dokploy-generated .env at build time, or use docker run --env-file locally.
 COPY --from=builder --chown=nextjs:nodejs /app/.env ./.env
 
 USER nextjs
-EXPOSE 3000
+EXPOSE 3000 1234
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 
-ENTRYPOINT ["node", "/app/docker-entrypoint.js"]
+ENTRYPOINT ["node", "/app/scripts/docker-entrypoint.js"]
 CMD ["node", "server.js"]
-

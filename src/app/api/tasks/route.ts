@@ -6,7 +6,17 @@ import {
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canEditTasks, canViewAllCommittees } from "@/lib/types";
+import {
+  canActOnApprovalStep,
+  currentApprovalStep,
+} from "@/lib/approval-stack";
+import { getOrgSettings } from "@/lib/settings";
+import {
+  canEditTasks,
+  canViewAllCommittees,
+  canCreateDirective,
+  type TaskWorkClass,
+} from "@/lib/types";
 
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -15,28 +25,92 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const eventId = searchParams.get("eventId");
-  const projectId = searchParams.get("projectId");
   const assignedToMe = searchParams.get("assignedToMe") === "true";
+  const waitingReview = searchParams.get("waitingReview") === "true";
   const global = searchParams.get("global") === "true";
+  const scope = searchParams.get("scope");
+  const statusFilter = searchParams.get("status");
   const perm = asPermissionUser(auth.user);
+
+  const taskInclude = {
+    assignedTo: { select: { id: true, name: true } },
+    event: { select: { id: true, title: true } },
+    committee: { select: { id: true, name: true, charterLetter: true, organizationId: true } },
+    subtasks: {
+      include: { assignedTo: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "asc" as const },
+    },
+  };
+
+  async function filterWaitingReview<
+    T extends {
+      status: string;
+      workClass: TaskWorkClass;
+      approvalStepIndex: number;
+      committeeId: string;
+      committee: { organizationId: string };
+    },
+  >(tasks: T[]): Promise<T[]> {
+    if (!waitingReview) return tasks;
+    const byOrg = new Map<string, Awaited<ReturnType<typeof getOrgSettings>>>();
+    const out: T[] = [];
+    for (const task of tasks) {
+      if (task.status !== "IN_REVIEW" || task.workClass === "PERSONAL") continue;
+      let settings = byOrg.get(task.committee.organizationId);
+      if (!settings) {
+        settings = await getOrgSettings(task.committee.organizationId);
+        byOrg.set(task.committee.organizationId, settings);
+      }
+      const stack =
+        task.workClass === "DIRECTIVE"
+          ? settings.directiveApprovalStack
+          : settings.committeeApprovalStack;
+      const step = currentApprovalStep(stack, task.approvalStepIndex);
+      if (canActOnApprovalStep(perm, step, task.committeeId)) {
+        out.push(task);
+      }
+    }
+    return out;
+  }
 
   if (global) {
     if (!canViewAllCommittees(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
     const tasks = await prisma.task.findMany({
-      include: {
-        committee: { select: { name: true, charterLetter: true } },
-        assignedTo: { select: { name: true } },
-        event: { select: { id: true, title: true } },
-        project: { select: { id: true, title: true } },
-        subtasks: {
-          include: { assignedTo: { select: { id: true, name: true } } },
-        },
+      where: {
+        parentId: null,
+        ...(waitingReview ? { status: "IN_REVIEW" } : {}),
+        ...(statusFilter && !waitingReview
+          ? { status: statusFilter as never }
+          : {}),
       },
+      include: taskInclude,
       orderBy: { updatedAt: "desc" },
     });
-    return NextResponse.json(tasks);
+    return NextResponse.json(await filterWaitingReview(tasks));
+  }
+
+  if (scope === "mine" || (!committeeId && scope !== "all")) {
+    const committeeIds = canViewAllCommittees(perm)
+      ? undefined
+      : auth.user.committeeMemberships.map((m) => m.committeeId);
+    const tasks = await prisma.task.findMany({
+      where: {
+        parentId: null,
+        ...(committeeIds ? { committeeId: { in: committeeIds } } : {}),
+        ...(eventId ? { eventId } : {}),
+        ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
+        ...(waitingReview
+          ? { status: "IN_REVIEW" }
+          : statusFilter
+            ? { status: statusFilter as never }
+            : {}),
+      },
+      include: taskInclude,
+      orderBy: [{ status: "asc" }, { dueDate: "asc" }],
+    });
+    return NextResponse.json(await filterWaitingReview(tasks));
   }
 
   if (!committeeId) {
@@ -50,33 +124,19 @@ export async function GET(request: Request) {
     where: {
       committeeId,
       ...(eventId ? { eventId } : {}),
-      ...(projectId ? { projectId } : {}),
       ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
       parentId: null,
-      ...(searchParams.get("standalone") === "true" ? { projectId: null } : {}),
-      ...(searchParams.get("inProject") === "true" ? { projectId: { not: null } } : {}),
+      ...(waitingReview
+        ? { status: "IN_REVIEW" }
+        : statusFilter
+          ? { status: statusFilter as never }
+          : {}),
     },
-    include: {
-      assignedTo: { select: { id: true, name: true } },
-      event: { select: { id: true, title: true } },
-      project: {
-        select: {
-          id: true,
-          title: true,
-          assignmentId: true,
-          assignment: { select: { id: true, status: true } },
-        },
-      },
-      assignmentAsRoot: { select: { id: true, status: true } },
-      subtasks: {
-        include: { assignedTo: { select: { id: true, name: true } } },
-        orderBy: { createdAt: "asc" },
-      },
-    },
+    include: taskInclude,
     orderBy: [{ status: "asc" }, { dueDate: "asc" }],
   });
 
-  return NextResponse.json(tasks);
+  return NextResponse.json(await filterWaitingReview(tasks));
 }
 
 export async function POST(request: Request) {
@@ -88,10 +148,10 @@ export async function POST(request: Request) {
     description?: string;
     committeeId?: string;
     eventId?: string;
-    projectId?: string;
     parentId?: string;
     dueDate?: string;
     assignedToId?: string;
+    workClass?: "DIRECTIVE" | "COMMITTEE" | "PERSONAL";
   };
 
   if (!body.title || !body.committeeId) {
@@ -107,22 +167,34 @@ export async function POST(request: Request) {
   const perm = asPermissionUser(auth.user);
   const isEditor = canEditTasks(perm, body.committeeId);
   const isSubtask = !!body.parentId;
+  let workClass = body.workClass ?? "COMMITTEE";
 
   if (isSubtask) {
     const parent = await prisma.task.findUnique({
       where: { id: body.parentId },
+      include: { parent: { select: { id: true, parentId: true, workClass: true } } },
     });
     if (!parent || parent.committeeId !== body.committeeId) {
       return NextResponse.json({ error: "Parent task not found" }, { status: 404 });
     }
-    if (parent.parentId) {
+    // Allow 2 nesting levels: root → child → grandchild
+    if (parent.parent?.parentId) {
       return NextResponse.json(
-        { error: "Only one level of subtasks is supported" },
+        { error: "Only two levels of nesting are supported" },
         { status: 400 },
       );
     }
+    // Infer workClass from parent when not provided
+    if (!body.workClass) {
+      if (parent.workClass === "DIRECTIVE") workClass = "COMMITTEE";
+      else if (parent.workClass === "COMMITTEE") workClass = "PERSONAL";
+      else workClass = "PERSONAL";
+    }
     body.eventId = body.eventId ?? parent.eventId ?? undefined;
-    body.projectId = body.projectId ?? parent.projectId ?? undefined;
+  } else if (workClass === "DIRECTIVE") {
+    if (!canViewAllCommittees(perm) && !canCreateDirective(perm)) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    }
   } else if (!isEditor) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
@@ -142,8 +214,8 @@ export async function POST(request: Request) {
       description: body.description,
       committeeId: body.committeeId,
       eventId: body.eventId ?? null,
-      projectId: body.projectId ?? null,
       parentId: body.parentId ?? null,
+      workClass,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
       assignedToId: body.assignedToId ?? null,
       createdById: auth.user.id,
@@ -151,7 +223,7 @@ export async function POST(request: Request) {
     include: {
       assignedTo: { select: { id: true, name: true } },
       event: { select: { id: true, title: true } },
-      project: { select: { id: true, title: true } },
+      committee: { select: { id: true, name: true, charterLetter: true } },
       subtasks: {
         include: { assignedTo: { select: { id: true, name: true } } },
       },

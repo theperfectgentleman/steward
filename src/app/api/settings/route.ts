@@ -22,7 +22,8 @@ export async function PATCH(request: Request) {
     allowSupervisoryAssignMembers: boolean;
     supervisoryLabel: string;
     committeeLabel: string;
-    approvalStack: import("@/lib/types").ApprovalStackStep[];
+    directiveApprovalStack: import("@/lib/types").ApprovalStackStep[];
+    committeeApprovalStack: import("@/lib/types").ApprovalStackStep[];
   }>;
 
   const settings = await updateOrgSettings(orgId, body);

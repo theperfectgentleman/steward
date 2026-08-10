@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import type { OrganizationMemberRole } from "@/lib/types";
 import {
-  CHURCH_APPROVAL_STACK,
-  DEFAULT_APPROVAL_STACK,
+  CHURCH_COMMITTEE_APPROVAL_STACK,
+  CHURCH_DIRECTIVE_APPROVAL_STACK,
+  DEFAULT_COMMITTEE_APPROVAL_STACK,
+  DEFAULT_DIRECTIVE_APPROVAL_STACK,
 } from "@/lib/types";
 import { COMMITTEE_CHARTER } from "@/lib/committees";
 
@@ -17,7 +19,6 @@ const DEFAULT_ROLE_TEMPLATES = [
       logMinutes: true,
       approveMinutes: true,
       invite: true,
-      submitReports: true,
     },
   },
   {
@@ -28,7 +29,6 @@ const DEFAULT_ROLE_TEMPLATES = [
     capabilities: {
       editTasks: true,
       logMinutes: true,
-      submitReports: true,
     },
   },
   {
@@ -39,7 +39,6 @@ const DEFAULT_ROLE_TEMPLATES = [
     capabilities: {
       editTasks: true,
       logMinutes: true,
-      submitReports: true,
     },
   },
   {
@@ -84,10 +83,14 @@ export async function createOrganization(input: {
             allowCrossCommitteeRead: false,
             requireOversightOnSelfInitiated: true,
             allowSupervisoryAssignMembers: true,
-            approvalStack:
+            directiveApprovalStack:
               template === "church"
-                ? CHURCH_APPROVAL_STACK
-                : DEFAULT_APPROVAL_STACK,
+                ? CHURCH_DIRECTIVE_APPROVAL_STACK
+                : DEFAULT_DIRECTIVE_APPROVAL_STACK,
+            committeeApprovalStack:
+              template === "church"
+                ? CHURCH_COMMITTEE_APPROVAL_STACK
+                : DEFAULT_COMMITTEE_APPROVAL_STACK,
           },
         },
         memberships: {

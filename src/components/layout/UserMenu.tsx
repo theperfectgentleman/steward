@@ -48,7 +48,7 @@ export function UserMenu() {
       user.supervisoryMembership ?? user.presbyteryMembership ?? null;
     if (supervisory) {
       const supervisoryLabel =
-        user.organization?.settings.supervisoryLabel ?? "Presbytery";
+        user.organization?.settings.supervisoryLabel ?? "Governance";
       const title = (supervisory.title as SupervisoryTitle | undefined) ??
         (supervisory.isHead ? "HEAD" : "MEMBER");
       const detail =

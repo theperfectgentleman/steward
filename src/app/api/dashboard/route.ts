@@ -21,54 +21,67 @@ export async function GET(request: Request) {
     if (access) return access;
   }
 
-  const committees = await prisma.committee.findMany({
-    where: committeeId
-      ? { id: committeeId }
-      : canViewAllCommittees(perm)
-        ? undefined
-        : {
-            id: {
-              in: auth.user.committeeMemberships.map((m) => m.committeeId),
-            },
-          },
-    include: {
-      tasks: { select: { status: true } },
-      projects: { select: { status: true } },
-      _count: { select: { meetings: true } },
-    },
-    orderBy: { charterLetter: "asc" },
-  });
-
-  const assignmentFilter = committeeId
-    ? { targetCommitteeId: committeeId }
+  const committeeWhere = committeeId
+    ? { id: committeeId }
     : canViewAllCommittees(perm)
-      ? {}
+      ? undefined
       : {
-          targetCommitteeId: {
+          id: {
             in: auth.user.committeeMemberships.map((m) => m.committeeId),
           },
         };
 
-  const assignments = await prisma.assignment.groupBy({
-    by: ["status"],
-    where: assignmentFilter,
-    _count: true,
+  const committees = await prisma.committee.findMany({
+    where: committeeWhere,
+    include: {
+      tasks: { select: { status: true }, where: { parentId: null } },
+      _count: {
+        select: {
+          events: {
+            where: { startDate: { gte: new Date() } },
+          },
+        },
+      },
+    },
+    orderBy: { charterLetter: "asc" },
   });
+
+  const torDocs = await prisma.libraryDocument.findMany({
+    where: {
+      tag: "TOR",
+      archivedAt: null,
+      committeeId: { in: committees.map((c) => c.id) },
+    },
+    select: { id: true, committeeId: true, title: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  const torByCommittee = new Map<string, { id: string; title: string }>();
+  for (const tor of torDocs) {
+    if (!tor.committeeId || torByCommittee.has(tor.committeeId)) continue;
+    torByCommittee.set(tor.committeeId, { id: tor.id, title: tor.title });
+  }
 
   const stats = committees.map((c) => {
     const total = c.tasks.length;
+    const todo = c.tasks.filter((t) => t.status === "TODO").length;
+    const inProgress = c.tasks.filter((t) => t.status === "IN_PROGRESS").length;
     const done = c.tasks.filter((t) => t.status === "DONE").length;
     const blocked = c.tasks.filter((t) => t.status === "BLOCKED").length;
-    const activeProjects = c.projects.filter((p) => p.status === "ACTIVE").length;
+    const inReview = c.tasks.filter((t) => (t.status as string) === "IN_REVIEW").length;
+    const tor = torByCommittee.get(c.id) ?? null;
     return {
       id: c.id,
       charterLetter: c.charterLetter,
       name: c.name,
       total,
+      todo,
+      inProgress,
       done,
       blocked,
-      activeProjects,
-      meetingCount: c._count.meetings,
+      inReview,
+      upcomingEvents: c._count.events,
+      torDocumentId: tor?.id ?? null,
+      torTitle: tor?.title ?? null,
     };
   });
 
@@ -83,10 +96,14 @@ export async function GET(request: Request) {
         };
 
   const recentTasks = await prisma.task.findMany({
-    where: { status: { in: ["BLOCKED", "DONE"] }, ...committeeFilter },
+    where: {
+      status: { in: ["BLOCKED", "DONE", "IN_PROGRESS"] },
+      parentId: null,
+      ...committeeFilter,
+    },
     include: { committee: { select: { name: true, id: true } } },
     orderBy: { updatedAt: "desc" },
-    take: 10,
+    take: 12,
   });
 
   const pendingMinutes = await prisma.meeting.findMany({
@@ -96,80 +113,33 @@ export async function GET(request: Request) {
     take: 5,
   });
 
-  const recentAssignments = await prisma.assignment.findMany({
-    where: assignmentFilter,
-    include: {
-      targetCommittee: { select: { name: true, id: true } },
-      createdBy: { select: { name: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 8,
-  });
-
-  const pendingAssignments = await prisma.assignment.count({
-    where: {
-      ...assignmentFilter,
-      status: "ASSIGNED",
-    },
-  });
-
   const myOpenTasks = await prisma.task.count({
     where: {
       assignedToId: auth.user.id,
-      status: { not: "DONE" },
+      status: { notIn: ["DONE"] },
       parentId: null,
       ...(committeeId ? { committeeId } : {}),
     },
   });
 
-  const awaitingMyClose = await prisma.assignment.findMany({
+  let tasksInReview = 0;
+  try {
+    tasksInReview = await prisma.task.count({
+      where: {
+        status: "IN_REVIEW" as never,
+        parentId: null,
+        ...committeeFilter,
+      },
+    });
+  } catch {
+    tasksInReview = 0;
+  }
+
+  const upcomingEvents = await prisma.event.count({
     where: {
-      createdById: auth.user.id,
-      status: "CHAIR_APPROVED",
+      startDate: { gte: new Date() },
+      ...committeeFilter,
     },
-    include: {
-      targetCommittee: { select: { id: true, name: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 10,
-  });
-
-  const myAssignmentDrafts = await prisma.assignment.count({
-    where: { createdById: auth.user.id, status: "DRAFT" },
-  });
-
-  const pendingInbox = committeeId
-    ? await prisma.assignment.findMany({
-        where: {
-          targetCommitteeId: committeeId,
-          status: "ASSIGNED",
-        },
-        include: {
-          createdBy: { select: { id: true, name: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      })
-    : [];
-
-  const myOpenTaskList = committeeId
-    ? await prisma.task.findMany({
-        where: {
-          committeeId,
-          assignedToId: auth.user.id,
-          status: { not: "DONE" },
-          parentId: null,
-        },
-        select: { id: true, title: true, status: true, dueDate: true },
-        orderBy: { dueDate: "asc" },
-        take: 5,
-      })
-    : [];
-
-  const timelineGoals = await prisma.timelineGoal.findMany({
-    where: committeeFilter,
-    include: { committee: { select: { id: true, name: true, charterLetter: true } } },
-    orderBy: { startDate: "asc" },
   });
 
   const alerts = [
@@ -178,10 +148,11 @@ export async function GET(request: Request) {
       .map((t) => ({
         id: `blocked-${t.id}`,
         type: "blocked" as const,
-        message: `${t.committee.name}: ${t.title} is awaiting`,
+        message: `${t.title} is awaiting`,
         time: t.updatedAt.toISOString(),
-        href: "/tasks",
+        href: `/tasks?committeeId=${t.committee.id}&column=BLOCKED`,
         committeeId: t.committee.id,
+        committeeName: t.committee.name,
       })),
     ...recentTasks
       .filter((t) => t.status === "DONE")
@@ -189,51 +160,50 @@ export async function GET(request: Request) {
       .map((t) => ({
         id: `done-${t.id}`,
         type: "completed" as const,
-        message: `${t.committee.name} completed ${t.title}`,
+        message: `Completed ${t.title}`,
         time: t.updatedAt.toISOString(),
-        href: "/tasks",
+        href: `/tasks?committeeId=${t.committee.id}`,
         committeeId: t.committee.id,
+        committeeName: t.committee.name,
       })),
     ...pendingMinutes.map((m) => ({
       id: `minutes-${m.id}`,
       type: "minutes" as const,
-      message: `${m.committee?.name ?? "Committee"} minutes filed — pending review`,
+      message: `Minutes filed — pending review`,
       time: m.date.toISOString(),
       href: m.eventId
-        ? `/c/${m.committeeId}/schedule/${m.eventId}`
-        : m.committeeId
-          ? `/c/${m.committeeId}/schedule`
-          : "/schedule",
+        ? `/events/${m.eventId}`
+        : `/events?committeeId=${m.committeeId}`,
       committeeId: m.committee?.id ?? m.committeeId ?? undefined,
+      committeeName: m.committee?.name ?? "Committee",
       meetingId: m.id,
-    })),
-    ...recentAssignments.map((a) => ({
-      id: `assignment-${a.id}`,
-      type: "assignment" as const,
-      message: `${a.targetCommittee?.name ?? "Personal"}: ${a.title} — ${a.status.replace(/_/g, " ").toLowerCase()}`,
-      time: a.updatedAt.toISOString(),
-      href: `/assignments/${a.id}`,
-      committeeId: a.targetCommittee?.id,
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
   const visibleAlerts = canViewAllCommittees(perm)
     ? alerts
     : alerts.filter(
-        (a) =>
-          !a.committeeId || canAccessCommittee(auth.user, a.committeeId),
+        (a) => !a.committeeId || canAccessCommittee(auth.user, a.committeeId),
       );
+
+  const timelineGoals = canViewAllCommittees(perm)
+    ? await prisma.timelineGoal.findMany({
+        where: committeeFilter,
+        include: {
+          committee: {
+            select: { id: true, name: true, charterLetter: true },
+          },
+        },
+        orderBy: { startDate: "asc" },
+      })
+    : [];
 
   return NextResponse.json({
     stats,
     alerts: visibleAlerts,
-    assignmentPipeline: assignments,
-    pendingAssignments,
     myOpenTasks,
-    awaitingMyClose,
-    myAssignmentDrafts,
-    pendingInbox,
-    myOpenTaskList,
+    tasksInReview,
+    upcomingEvents,
     timelineGoals,
   });
 }

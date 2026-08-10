@@ -1,22 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TaskStatusGroup } from "@/components/TaskStatusGroup";
 import { KanbanColumn } from "@/components/KanbanColumn";
+import { TaskListView } from "@/components/TaskListView";
+import {
+  TaskStatusBreakdown,
+  countsFromTasks,
+} from "@/components/TaskStatusBreakdown";
 import { TouchButton } from "@/components/TouchButton";
 import { DateInput } from "@/components/DateInput";
 import { FORM_FIELD_CLASS, FORM_FILTER_CLASS } from "@/lib/form-field";
 import { useApp } from "@/providers/AppProvider";
-import { canEditTasks, type TaskStatus } from "@/lib/types";
+import {
+  canEditTasks,
+  canCreateDirective,
+  canManageTor,
+  type TaskStatus,
+  type TaskWorkClass,
+} from "@/lib/types";
 import { toPermissionUser } from "@/lib/permissions-client";
 import { KANBAN_COLUMNS } from "@/lib/kanban";
-import { Plus, X } from "lucide-react";
+import { formatGroupRoleLabel } from "@/lib/work-context";
+import { documentsPath, taskPath } from "@/lib/navigation";
+import { LayoutGrid, List, Plus, X } from "lucide-react";
+
+const TASKS_VIEW_KEY = "steward.tasksView";
 
 type Subtask = {
   id: string;
   title: string;
   status: TaskStatus;
+  workClass?: TaskWorkClass;
   assignedTo: { id: string; name: string } | null;
 };
 
@@ -25,50 +42,101 @@ type Task = {
   title: string;
   description: string | null;
   status: TaskStatus;
+  workClass?: TaskWorkClass;
+  approvalStepIndex?: number;
   dueDate: string | null;
   assignedTo: { id: string; name: string } | null;
   event: { id: string; title: string } | null;
-  project?: {
-    id: string;
-    title: string;
-    assignmentId?: string | null;
-    assignment?: { id: string; status: string } | null;
-  } | null;
-  assignmentAsRoot?: { id: string; status: string } | null;
+  committee?: { id: string; name: string; charterLetter: string } | null;
   subtasks: Subtask[];
 };
 
 type EventOption = { id: string; title: string };
 
-type Member = { id: string; name: string };
-
-export function TasksView({ committeeId }: { committeeId: string }) {
+export function TasksView({
+  committeeId,
+}: {
+  /** null = All my groups */
+  committeeId: string | null;
+}) {
   const { user, refreshAttention } = useApp();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
+  const [torDoc, setTorDoc] = useState<{ id: string; title: string } | null>(
+    null,
+  );
   const [eventFilter, setEventFilter] = useState<string>("all");
   const initialFilter = searchParams.get("filter");
-  const [taskFilter, setTaskFilter] = useState<"mine" | "all" | "standalone" | "project">(
-    initialFilter === "all" || initialFilter === "standalone" || initialFilter === "project"
+  const [taskFilter, setTaskFilter] = useState<
+    "all" | "needs-me" | "waiting-review"
+  >(
+    initialFilter === "all" || initialFilter === "waiting-review"
       ? initialFilter
-      : "mine",
+      : "needs-me",
   );
-  const [members, setMembers] = useState<Member[]>([]);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [layoutView, setLayoutView] = useState<"board" | "list">("board");
+
+  const [statusCounts, setStatusCounts] = useState(() =>
+    countsFromTasks([]),
+  );
+  const wantsCreate =
+    searchParams.get("create") === "1" || searchParams.get("assign") === "1";
+  const [createOpen, setCreateOpen] = useState(wantsCreate);
+  const [lastCreateSignal, setLastCreateSignal] = useState(wantsCreate);
+  if (wantsCreate !== lastCreateSignal) {
+    setLastCreateSignal(wantsCreate);
+    if (wantsCreate) setCreateOpen(true);
+  }
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const deepLinkTaskId = searchParams.get("task");
-  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
+  const columnParam = searchParams.get("column") as TaskStatus | null;
+  const forceAllFilter =
+    !!columnParam &&
+    ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "IN_REVIEW"].includes(
+      columnParam,
+    );
+  const effectiveFilter = forceAllFilter ? "all" : taskFilter;
   const taskRefs = useRef<Record<string, HTMLElement | null>>({});
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TASKS_VIEW_KEY);
+      if (stored === "list" || stored === "board") setLayoutView(stored);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!deepLinkTaskId) return;
+    router.replace(taskPath(committeeId, deepLinkTaskId));
+  }, [deepLinkTaskId, committeeId, router]);
+
+  const setViewMode = (mode: "board" | "list") => {
+    setLayoutView(mode);
+    try {
+      localStorage.setItem(TASKS_VIEW_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const loadTasks = useCallback(() => {
-    if (!committeeId) return;
-    const qs = new URLSearchParams({ committeeId });
+    if (!user) return;
+    const qs = new URLSearchParams();
+    if (committeeId) {
+      qs.set("committeeId", committeeId);
+    } else {
+      qs.set("scope", "mine");
+    }
     if (eventFilter !== "all") qs.set("eventId", eventFilter);
-    if (taskFilter === "mine") qs.set("assignedToMe", "true");
-    if (taskFilter === "standalone") qs.set("standalone", "true");
-    if (taskFilter === "project") qs.set("inProject", "true");
+    if (effectiveFilter === "needs-me") {
+      qs.set("assignedToMe", "true");
+    }
+    if (effectiveFilter === "waiting-review") qs.set("waitingReview", "true");
     fetch(`/api/tasks?${qs}`)
       .then((r) => r.json())
       .then((data) => {
@@ -76,28 +144,60 @@ export function TasksView({ committeeId }: { committeeId: string }) {
         else setTasks([]);
       })
       .catch(() => setTasks([]));
-  }, [committeeId, eventFilter, taskFilter]);
+  }, [committeeId, eventFilter, effectiveFilter, user]);
+
+  const loadStatusCounts = useCallback(() => {
+    if (!committeeId) {
+      setStatusCounts(countsFromTasks([]));
+      setTorDoc(null);
+      return;
+    }
+    fetch(`/api/dashboard?committeeId=${encodeURIComponent(committeeId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const s = Array.isArray(data.stats) ? data.stats[0] : null;
+        if (!s) {
+          setStatusCounts(countsFromTasks([]));
+          setTorDoc(null);
+          return;
+        }
+        setStatusCounts({
+          TODO: s.todo ?? 0,
+          IN_PROGRESS: s.inProgress ?? 0,
+          IN_REVIEW: s.inReview ?? 0,
+          DONE: s.done ?? 0,
+          BLOCKED: s.blocked ?? 0,
+          total: s.total ?? 0,
+        });
+        if (s.torDocumentId) {
+          setTorDoc({ id: s.torDocumentId, title: s.torTitle ?? "Terms of Reference" });
+        } else {
+          setTorDoc(null);
+        }
+      })
+      .catch(() => {
+        setStatusCounts(countsFromTasks([]));
+        setTorDoc(null);
+      });
+  }, [committeeId]);
 
   useEffect(() => {
     loadTasks();
   }, [loadTasks]);
 
   useEffect(() => {
-    if (searchParams.get("create") === "1") {
-      setCreateOpen(true);
-    }
-  }, [searchParams]);
-
-  const columnParam = searchParams.get("column") as TaskStatus | null;
+    loadStatusCounts();
+  }, [loadStatusCounts]);
 
   useEffect(() => {
     if (
       !columnParam ||
-      !["TODO", "IN_PROGRESS", "BLOCKED", "DONE"].includes(columnParam)
+      !["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "IN_REVIEW"].includes(
+        columnParam,
+      )
     ) {
       return;
     }
-    setTaskFilter("all");
     const timer = setTimeout(() => {
       document
         .getElementById(`kanban-column-${columnParam}`)
@@ -107,31 +207,10 @@ export function TasksView({ committeeId }: { committeeId: string }) {
   }, [columnParam, tasks.length]);
 
   useEffect(() => {
-    if (!deepLinkTaskId || tasks.length === 0) return;
-    setTaskFilter("all");
-    setHighlightedTaskId(deepLinkTaskId);
-    const el = taskRefs.current[deepLinkTaskId];
-    if (el) {
-      requestAnimationFrame(() => {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
+    if (!committeeId) {
+      setEvents([]);
+      return;
     }
-    const timer = setTimeout(() => setHighlightedTaskId(null), 4000);
-    return () => clearTimeout(timer);
-  }, [deepLinkTaskId, tasks]);
-
-  useEffect(() => {
-    if (!committeeId) return;
-    fetch(`/api/committees/members?committeeId=${committeeId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setMembers(data.map((m: Member) => ({ id: m.id, name: m.name })));
-        } else {
-          setMembers([]);
-        }
-      })
-      .catch(() => setMembers([]));
 
     fetch(`/api/events?committeeId=${committeeId}`)
       .then((r) => r.json())
@@ -142,6 +221,11 @@ export function TasksView({ committeeId }: { committeeId: string }) {
       })
       .catch(() => setEvents([]));
   }, [committeeId]);
+
+  const refreshTasks = () => {
+    loadTasks();
+    loadStatusCounts();
+  };
 
   const resetForm = () => {
     setNewTitle("");
@@ -154,7 +238,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    loadTasks();
+    refreshTasks();
   };
 
   const assignTask = async (id: string, userId: string) => {
@@ -166,37 +250,50 @@ export function TasksView({ committeeId }: { committeeId: string }) {
     loadTasks();
   };
 
-  const reviewableStatuses = new Set(["ACCEPTED", "IN_PROGRESS", "RETURNED"]);
-
-  const getReviewAssignmentId = (task: Task) => {
-    const fromProject = task.project?.assignment;
-    if (fromProject && reviewableStatuses.has(fromProject.status)) {
-      return fromProject.id;
-    }
-    if (task.assignmentAsRoot && reviewableStatuses.has(task.assignmentAsRoot.status)) {
-      return task.assignmentAsRoot.id;
-    }
-    return null;
-  };
-
-  const submitAssignmentReview = async (assignmentId: string) => {
-    await fetch("/api/assignments", {
+  const submitTaskReview = async (taskId: string) => {
+    await fetch(`/api/tasks/${taskId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: assignmentId, action: "submit_review" }),
+      body: JSON.stringify({ action: "submit_review" }),
     });
     refreshAttention();
-    loadTasks();
+    refreshTasks();
+  };
+
+  const approveTaskReview = async (taskId: string) => {
+    await fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "approve_step" }),
+    });
+    refreshAttention();
+    refreshTasks();
+  };
+
+  const returnTaskReview = async (taskId: string) => {
+    const comment = window.prompt("Return comment (optional)") ?? undefined;
+    await fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "return", comment }),
+    });
+    refreshAttention();
+    refreshTasks();
   };
 
   const deleteTask = async (id: string) => {
     if (!confirm("Delete this task?")) return;
     await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-    loadTasks();
+    refreshTasks();
   };
 
   const createTask = async () => {
     if (!newTitle.trim() || !committeeId || !user) return;
+    const assign = searchParams.get("assign") === "1";
+    const userPerm = toPermissionUser(user);
+    const canDirective =
+      canCreateDirective(userPerm) ||
+      canEditTasks(userPerm, committeeId);
     await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -205,72 +302,140 @@ export function TasksView({ committeeId }: { committeeId: string }) {
         committeeId,
         eventId: eventFilter !== "all" ? eventFilter : undefined,
         dueDate: newDueDate || undefined,
+        workClass: assign && canDirective ? "DIRECTIVE" : "COMMITTEE",
       }),
     });
     resetForm();
     setCreateOpen(false);
-    loadTasks();
+    refreshTasks();
   };
 
-  if (!committeeId || !user) {
+  if (!user) {
     return (
       <p className="text-muted text-center py-6">
-        Select a committee to view tasks.
+        Sign in to view work.
       </p>
     );
   }
 
-  const flatTasks = tasks.flatMap((t) => [
-    {
-      id: t.id,
-      title: t.title,
-      status: t.status,
-      description: t.description,
-      dueDate: t.dueDate,
-      assignedTo: t.assignedTo,
-      eventTitle: t.event?.title,
-      isSubtask: false,
-      reviewAssignmentId: getReviewAssignmentId(t),
-    },
-    ...t.subtasks.map((s) => ({
-      id: s.id,
-      title: s.title,
-      status: s.status,
-      description: null as string | null,
-      dueDate: null as string | null,
-      assignedTo: s.assignedTo,
-      eventTitle: t.event?.title,
-      isSubtask: true,
-      reviewAssignmentId: null as string | null,
-    })),
-  ]);
+  const perm = toPermissionUser(user);
+  const supervisoryLabel =
+    user.organization?.settings.supervisoryLabel ?? "Governance";
+
+  const flatTasks = tasks.flatMap((t) => {
+    const contextLabel = formatGroupRoleLabel(perm, t.committee ?? null, {
+      supervisoryLabel,
+    });
+    const canSubmit =
+      t.workClass !== "PERSONAL" &&
+      (t.status === "IN_PROGRESS" || t.status === "DONE" || t.status === "BLOCKED");
+    const canApprove = t.status === "IN_REVIEW";
+    return [
+      {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        description: t.description,
+        dueDate: t.dueDate,
+        assignedTo: t.assignedTo,
+        eventTitle: t.event?.title,
+        isSubtask: false,
+        contextLabel,
+        canSubmitReview: canSubmit,
+        canApproveReview: canApprove,
+        workClass: t.workClass,
+        committeeId: t.committee?.id ?? committeeId,
+      },
+      ...t.subtasks.map((s) => ({
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        description: null as string | null,
+        dueDate: null as string | null,
+        assignedTo: s.assignedTo,
+        eventTitle: t.event?.title,
+        isSubtask: true,
+        contextLabel,
+        canSubmitReview: false,
+        canApproveReview: s.status === "IN_REVIEW",
+        workClass: s.workClass,
+        committeeId: t.committee?.id ?? committeeId,
+      })),
+    ];
+  });
 
   const byStatus = (status: TaskStatus) =>
     flatTasks.filter((t) => t.status === status);
 
-  const perm = user ? toPermissionUser(user) : null;
-  const canDelete = perm ? canEditTasks(perm, committeeId) : false;
-  const canCreate = perm ? canEditTasks(perm, committeeId) : false;
+  const canDelete = !!(perm && committeeId && canEditTasks(perm, committeeId));
+  const canCreate = !!(
+    perm &&
+    committeeId &&
+    (canEditTasks(perm, committeeId) || canCreateDirective(perm))
+  );
+  const assignMode = searchParams.get("assign") === "1";
 
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-charcoal tracking-tight">
-            Task Board
+            Work
           </h2>
           <p className="mt-1 text-sm text-muted">
-            {flatTasks.length} task{flatTasks.length === 1 ? "" : "s"}
-            {taskFilter === "mine" ? " · assigned to you" : ""}
+            {tasks.length} item{tasks.length === 1 ? "" : "s"}
+            {!committeeId ? " · all groups" : ""}
+            {effectiveFilter === "needs-me" ? " · needs you" : ""}
+            {effectiveFilter === "waiting-review" ? " · waiting for your review" : ""}
           </p>
         </div>
         {canCreate && !createOpen && (
           <TouchButton onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" />
-            New Task
+            {assignMode ? "Assign directive" : "New work"}
           </TouchButton>
         )}
       </div>
+
+      {committeeId ? (
+        <p className="text-sm rounded-xl border border-charcoal/8 bg-white px-3 py-2 text-muted">
+          {torDoc ? (
+            <>
+              TOR:{" "}
+              <Link
+                href={`/documents/${torDoc.id}`}
+                className="font-semibold text-primary hover:underline"
+              >
+                {torDoc.title}
+              </Link>
+              {" · "}
+              open it to get AI work suggestions
+            </>
+          ) : (
+            <>
+              No TOR yet.
+              {perm && canManageTor(perm, committeeId) ? (
+                <>
+                  {" "}
+                  <Link
+                    href={documentsPath({ committeeId, tag: "TOR" })}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    Add Terms of Reference
+                  </Link>{" "}
+                  so AI can suggest work for this group.
+                </>
+              ) : (
+                <> Ask the chair to add one so AI can suggest work.</>
+              )}
+            </>
+          )}
+        </p>
+      ) : null}
+
+      {committeeId ? (
+        <TaskStatusBreakdown counts={statusCounts} title="Status breakdown" />
+      ) : null}
 
       {canCreate && createOpen && (
         <section
@@ -279,7 +444,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
         >
           <div className="flex items-start justify-between gap-3">
             <h2 id="new-task-heading" className="text-lg font-bold text-charcoal">
-              New task
+              {assignMode ? "Assign directive" : "New work"}
             </h2>
             <button
               type="button"
@@ -296,7 +461,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
           {eventFilter !== "all" && (
             <p className="text-sm text-muted">
-              This task will be linked to:{" "}
+              This {assignMode ? "directive" : "work"} will be linked to:{" "}
               <span className="font-semibold text-charcoal">
                 {events.find((e) => e.id === eventFilter)?.title}
               </span>
@@ -305,7 +470,7 @@ export function TasksView({ committeeId }: { committeeId: string }) {
 
           <label className="block">
             <span className="text-xs font-bold text-accent uppercase tracking-wider">
-              Task Title
+              {assignMode ? "Directive title" : "Work title"}
             </span>
             <input
               type="text"
@@ -337,7 +502,9 @@ export function TasksView({ committeeId }: { committeeId: string }) {
             >
               Cancel
             </TouchButton>
-            <TouchButton onClick={createTask}>Create Task</TouchButton>
+            <TouchButton onClick={createTask}>
+              {assignMode ? "Assign directive" : "Create work"}
+            </TouchButton>
           </div>
         </section>
       )}
@@ -346,15 +513,16 @@ export function TasksView({ committeeId }: { committeeId: string }) {
         <select
           value={taskFilter}
           onChange={(e) =>
-            setTaskFilter(e.target.value as "mine" | "all" | "standalone" | "project")
+            setTaskFilter(
+              e.target.value as "all" | "needs-me" | "waiting-review",
+            )
           }
           className={FORM_FILTER_CLASS}
-          aria-label="Filter tasks"
+          aria-label="Filter work"
         >
-          <option value="mine">Assigned to me</option>
-          <option value="all">All tasks</option>
-          <option value="project">Project tasks</option>
-          <option value="standalone">Standalone only</option>
+          <option value="needs-me">Needs me</option>
+          <option value="waiting-review">Waiting for my review</option>
+          <option value="all">All in group</option>
         </select>
 
         <select
@@ -370,12 +538,72 @@ export function TasksView({ committeeId }: { committeeId: string }) {
             </option>
           ))}
         </select>
+
+        <div
+          className="inline-flex h-10 rounded-xl border border-charcoal/15 bg-white p-0.5"
+          role="group"
+          aria-label="View mode"
+        >
+          <button
+            type="button"
+            onClick={() => setViewMode("board")}
+            className={`inline-flex items-center gap-1.5 rounded-[10px] px-3 text-sm font-semibold transition-colors ${
+              layoutView === "board"
+                ? "bg-charcoal text-white"
+                : "text-muted hover:text-charcoal"
+            }`}
+            aria-pressed={layoutView === "board"}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Board
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`inline-flex items-center gap-1.5 rounded-[10px] px-3 text-sm font-semibold transition-colors ${
+              layoutView === "list"
+                ? "bg-charcoal text-white"
+                : "text-muted hover:text-charcoal"
+            }`}
+            aria-pressed={layoutView === "list"}
+          >
+            <List className="h-3.5 w-3.5" />
+            List
+          </button>
+        </div>
       </div>
 
       {flatTasks.length === 0 ? (
         <p className="text-center text-muted py-8 text-sm rounded-xl border border-dashed border-charcoal/15 bg-white">
-          No tasks yet. Create one to get started.
+          No items yet. Create work or assign a directive to get started.
         </p>
+      ) : layoutView === "list" ? (
+        <TaskListView
+          rows={tasks.map((t) => {
+            const contextLabel = formatGroupRoleLabel(perm, t.committee ?? null, {
+              supervisoryLabel,
+            });
+            return {
+              id: t.id,
+              title: t.title,
+              status: t.status,
+              workClass: t.workClass,
+              dueDate: t.dueDate,
+              assignedTo: t.assignedTo,
+              committeeId: t.committee?.id ?? committeeId,
+              contextLabel,
+              subtasks: t.subtasks.map((s) => ({
+                id: s.id,
+                title: s.title,
+                status: s.status,
+                workClass: s.workClass,
+                dueDate: null,
+                assignedTo: s.assignedTo,
+                committeeId: t.committee?.id ?? committeeId,
+              })),
+            };
+          })}
+        />
       ) : (
         <>
           {/* Mobile / tablet: dense vertical list */}
@@ -390,37 +618,37 @@ export function TasksView({ committeeId }: { committeeId: string }) {
                 key={status}
                 status={status}
                 tasks={byStatus(status)}
-                committeeId={committeeId}
+                committeeId={committeeId ?? ""}
                 userId={user.id}
                 canEdit={canCreate}
-                members={members}
-                highlightedTaskId={highlightedTaskId}
                 taskRefs={taskRefs}
                 onStatusChange={updateStatus}
                 onAssign={assignTask}
                 onDelete={canDelete ? deleteTask : undefined}
-                onSubmitReview={submitAssignmentReview}
+                onSubmitReview={submitTaskReview}
+                onApproveReview={approveTaskReview}
+                onReturnReview={returnTaskReview}
               />
             ))}
           </div>
 
           {/* Wide screen: horizontal Kanban columns */}
-          <div className="hidden lg:grid lg:grid-cols-4 lg:gap-3 min-h-0">
+          <div className="hidden lg:grid lg:grid-cols-5 lg:gap-3 min-h-0">
             {KANBAN_COLUMNS.map((status) => (
               <KanbanColumn
                 key={status}
                 status={status}
                 tasks={byStatus(status)}
-                committeeId={committeeId}
+                committeeId={committeeId ?? ""}
                 userId={user.id}
                 canEdit={canCreate}
-                members={members}
-                highlightedTaskId={highlightedTaskId}
                 taskRefs={taskRefs}
                 onStatusChange={updateStatus}
                 onAssign={assignTask}
                 onDelete={canDelete ? deleteTask : undefined}
-                onSubmitReview={submitAssignmentReview}
+                onSubmitReview={submitTaskReview}
+                onApproveReview={approveTaskReview}
+                onReturnReview={returnTaskReview}
               />
             ))}
           </div>

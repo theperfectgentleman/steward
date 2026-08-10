@@ -1,25 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { ChevronDown, Search } from "lucide-react";
 import { BottomSheet } from "@/components/BottomSheet";
 import { useApp } from "@/providers/AppProvider";
-import { canAcceptAssignments, canViewAllCommittees } from "@/lib/types";
+import { canManageTor, canViewAllCommittees } from "@/lib/types";
 import { toPermissionUser } from "@/lib/permissions-client";
 import {
-  committeePath,
-  isCommitteeRoute,
-  parseCommitteeId,
+  ALL_GROUPS_ID,
+  documentsPath,
+  isAllGroups,
+  peerPathForGroup,
+  tasksPath,
 } from "@/lib/navigation";
 import type { CommitteeRef } from "@/lib/navigation";
 
 function useCommitteeList() {
   const { user } = useApp();
   const [committees, setCommittees] = useState<CommitteeRef[]>([]);
-  const [pendingByCommittee, setPendingByCommittee] = useState<
-    Record<string, number>
-  >({});
 
   useEffect(() => {
     if (!user) return;
@@ -33,52 +32,27 @@ function useCommitteeList() {
       .catch(() => setCommittees([]));
   }, [user]);
 
-  useEffect(() => {
-    if (!user) return;
-    const perm = toPermissionUser(user);
-    fetch("/api/assignments?status=ASSIGNED")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!Array.isArray(data)) {
-          setPendingByCommittee({});
-          return;
-        }
-        const counts: Record<string, number> = {};
-        for (const a of data as {
-          targetCommitteeId?: string;
-          targetCommittee?: { id: string };
-        }[]) {
-          const cid = a.targetCommitteeId ?? a.targetCommittee?.id;
-          if (!cid) continue;
-          if (!canAcceptAssignments(perm, cid)) continue;
-          counts[cid] = (counts[cid] ?? 0) + 1;
-        }
-        setPendingByCommittee(counts);
-      })
-      .catch(() => setPendingByCommittee({}));
-  }, [user]);
-
-  return { user, committees, pendingByCommittee };
+  return { user, committees };
 }
 
 function CommitteeList({
   committees,
-  pendingByCommittee,
   activeId,
-  highlightOverall,
+  highlightAll,
   query,
   onQueryChange,
   onPick,
-  onPickOverall,
+  onPickAll,
+  committeeLabel,
 }: {
   committees: CommitteeRef[];
-  pendingByCommittee: Record<string, number>;
   activeId: string | null;
-  highlightOverall: boolean;
+  highlightAll: boolean;
   query: string;
   onQueryChange: (q: string) => void;
   onPick: (c: CommitteeRef) => void;
-  onPickOverall: () => void;
+  onPickAll: () => void;
+  committeeLabel: string;
 }) {
   const filtered = committees.filter((c) =>
     c.name.toLowerCase().includes(query.toLowerCase()),
@@ -92,7 +66,7 @@ function CommitteeList({
           type="search"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Search committees…"
+          placeholder={`Search ${committeeLabel.toLowerCase()}s…`}
           className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-charcoal/10 bg-surface focus:border-primary outline-none"
         />
       </div>
@@ -100,9 +74,9 @@ function CommitteeList({
         <li>
           <button
             type="button"
-            onClick={onPickOverall}
+            onClick={onPickAll}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors ${
-              highlightOverall
+              highlightAll
                 ? "bg-primary/15 text-charcoal"
                 : "text-muted hover:bg-surface hover:text-charcoal"
             }`}
@@ -110,37 +84,27 @@ function CommitteeList({
             <span className="w-9 h-9 flex items-center justify-center rounded-lg bg-surface text-accent font-bold text-xs shrink-0">
               All
             </span>
-            <span>Overall Dashboard</span>
+            <span>All my groups</span>
           </button>
         </li>
-        {filtered.map((c) => {
-          const pending = pendingByCommittee[c.id] ?? 0;
-          return (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => onPick(c)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors ${
-                  activeId === c.id
-                    ? "bg-primary/15 text-charcoal"
-                    : pending > 0
-                      ? "bg-accent/5 text-charcoal hover:bg-accent/10"
-                      : "text-muted hover:bg-surface hover:text-charcoal"
-                }`}
-              >
-                <span className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-accent/10 text-accent font-bold text-xs uppercase shrink-0">
-                  {c.charterLetter}
-                  {pending > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-0.5 rounded-full bg-accent text-white text-[9px] font-bold flex items-center justify-center">
-                      {pending > 9 ? "9+" : pending}
-                    </span>
-                  )}
-                </span>
-                <span className="truncate flex-1">{c.name}</span>
-              </button>
-            </li>
-          );
-        })}
+        {filtered.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={() => onPick(c)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors ${
+                activeId === c.id
+                  ? "bg-primary/15 text-charcoal"
+                  : "text-muted hover:bg-surface hover:text-charcoal"
+              }`}
+            >
+              <span className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-accent/10 text-accent font-bold text-xs uppercase shrink-0">
+                {c.charterLetter}
+              </span>
+              <span className="truncate flex-1">{c.name}</span>
+            </button>
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -149,15 +113,14 @@ function CommitteeList({
 export function CommitteeSelector() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, committees, pendingByCommittee } = useCommitteeList();
+  const searchParams = useSearchParams();
+  const { setActiveCommitteeId, clearActiveCommitteeId } = useApp();
+  const { user, committees } = useCommitteeList();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const routeCommitteeId = parseCommitteeId(pathname);
-  const onOverallDashboard = pathname === "/";
-  const onCommitteeRoute = isCommitteeRoute(pathname);
-  const activeId = onCommitteeRoute ? routeCommitteeId : null;
+  const queryCommitteeId = searchParams.get("committeeId");
   const [storedCommitteeId, setStoredCommitteeId] = useState<string | null>(
     null,
   );
@@ -166,14 +129,16 @@ export function CommitteeSelector() {
     setStoredCommitteeId(localStorage.getItem("unitycommit-committee"));
   }, []);
 
-  const active =
-    (activeId
-      ? committees.find((c) => c.id === activeId)
-      : null) ??
-    (storedCommitteeId
-      ? committees.find((c) => c.id === storedCommitteeId)
-      : null) ??
+  const resolvedId =
+    queryCommitteeId ??
+    storedCommitteeId ??
     null;
+
+  const onAll = isAllGroups(resolvedId) || resolvedId === ALL_GROUPS_ID;
+  const activeId = onAll ? null : resolvedId;
+  const active = activeId
+    ? committees.find((c) => c.id === activeId) ?? null
+    : null;
 
   useEffect(() => {
     if (!open) return;
@@ -197,43 +162,61 @@ export function CommitteeSelector() {
   const perm = toPermissionUser(user);
   const showSwitcher =
     committees.length > 1 || canViewAllCommittees(perm);
+  const committeeLabel =
+    user.organization?.settings.committeeLabel ?? "Committee";
 
   if (!showSwitcher) {
     return (
       <p className="max-w-[12rem] truncate text-sm font-semibold text-charcoal sm:max-w-xs">
-        {active?.name ?? committees[0]?.name ?? "Committee"}
+        {active?.name ?? committees[0]?.name ?? committeeLabel}
       </p>
     );
   }
 
-  const pick = (c: CommitteeRef) => {
-    localStorage.setItem("unitycommit-committee", c.id);
+  const pick = async (c: CommitteeRef) => {
+    setActiveCommitteeId(c.id);
     setStoredCommitteeId(c.id);
-    const section = pathname.match(
-      /\/(tasks|schedule|minutes|projects|assignments|documents)(?:\/|$)/,
-    )?.[1] as
-      | "tasks"
-      | "schedule"
-      | "minutes"
-      | "projects"
-      | "assignments"
-      | "documents"
-      | undefined;
-    router.push(committeePath(c.id, section));
+    setOpen(false);
+    setQuery("");
+
+    // From Home, land on the group's TOR — committees live on TOR
+    if (pathname === "/") {
+      try {
+        const res = await fetch(
+          `/api/dashboard?committeeId=${encodeURIComponent(c.id)}`,
+        );
+        const data = await res.json();
+        const s = Array.isArray(data.stats) ? data.stats[0] : null;
+        if (s?.torDocumentId) {
+          router.push(`/documents/${s.torDocumentId}`);
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+      const perm = toPermissionUser(user);
+      if (canManageTor(perm, c.id)) {
+        router.push(documentsPath({ committeeId: c.id, tag: "TOR" }));
+      } else {
+        router.push(tasksPath(c.id));
+      }
+      return;
+    }
+
+    router.push(peerPathForGroup(pathname, c.id));
+  };
+
+  const pickAll = () => {
+    clearActiveCommitteeId();
+    setStoredCommitteeId(ALL_GROUPS_ID);
+    localStorage.setItem("unitycommit-committee", ALL_GROUPS_ID);
+    router.push(peerPathForGroup(pathname, ALL_GROUPS_ID));
     setOpen(false);
     setQuery("");
   };
 
-  const pickOverall = () => {
-    router.push("/");
-    setOpen(false);
-    setQuery("");
-  };
-
-  const label = onOverallDashboard
-    ? "Overall Dashboard"
-    : active?.name ?? "Select committee";
-  const letter = onOverallDashboard ? "All" : active?.charterLetter ?? "?";
+  const label = onAll ? "All my groups" : active?.name ?? `Select ${committeeLabel.toLowerCase()}`;
+  const letter = onAll ? "All" : active?.charterLetter ?? "?";
 
   return (
     <div ref={rootRef} className="relative">
@@ -261,13 +244,13 @@ export function CommitteeSelector() {
         <div className="absolute left-0 top-[calc(100%+0.35rem)] z-50 hidden w-[min(100vw-2rem,22rem)] rounded-xl border border-charcoal/10 bg-white p-3 shadow-lg lg:block">
           <CommitteeList
             committees={committees}
-            pendingByCommittee={pendingByCommittee}
             activeId={activeId}
-            highlightOverall={onOverallDashboard}
+            highlightAll={onAll}
             query={query}
             onQueryChange={setQuery}
             onPick={pick}
-            onPickOverall={pickOverall}
+            onPickAll={pickAll}
+            committeeLabel={committeeLabel}
           />
         </div>
       )}
@@ -279,17 +262,17 @@ export function CommitteeSelector() {
             setOpen(false);
             setQuery("");
           }}
-          title="Switch committee"
+          title="Switch group"
         >
           <CommitteeList
             committees={committees}
-            pendingByCommittee={pendingByCommittee}
             activeId={activeId}
-            highlightOverall={onOverallDashboard}
+            highlightAll={onAll}
             query={query}
             onQueryChange={setQuery}
             onPick={pick}
-            onPickOverall={pickOverall}
+            onPickAll={pickAll}
+            committeeLabel={committeeLabel}
           />
         </BottomSheet>
       </div>

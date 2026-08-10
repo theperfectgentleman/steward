@@ -7,49 +7,32 @@ import { ChevronRight, Search } from "lucide-react";
 import { AttentionBellButton } from "@/components/BottomNav";
 import { AttentionFeed } from "@/components/AttentionFeed";
 import { BottomSheet } from "@/components/BottomSheet";
-import { EmailComingSoon } from "@/components/ComingSoonBanner";
 import { useApp } from "@/providers/AppProvider";
-import { useNavModel } from "@/hooks/useNavModel";
 import type { AttentionItem } from "@/lib/attention";
 import { runAttentionPrimaryAction } from "@/lib/attention-actions";
 import {
   dismissAttentionItem,
   filterDismissedAttention,
 } from "@/lib/attention-dismiss";
-import {
-  committeePath,
-  isCommitteeRoute,
-  parseCommitteeId,
-  parseCommitteeSection,
-} from "@/lib/navigation";
 import { CommitteeSelector } from "@/components/layout/CommitteeSelector";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { BrandLogo } from "@/components/BrandLogo";
 
 const CRUMB_MAX = 15;
 
-const SECTION_LABELS: Record<string, string> = {
-  overview: "Overview",
-  tasks: "Board",
-  projects: "Projects",
-  schedule: "Schedule",
-  assignments: "Assignments",
-  documents: "Documents",
-};
-
 const TOP_ROUTE_CRUMBS: { match: (p: string) => boolean; labels: string[] }[] = [
-  { match: (p) => p === "/assign-work", labels: ["Assign work"] },
-  { match: (p) => p.startsWith("/assignments"), labels: ["Assignments"] },
-  { match: (p) => p.startsWith("/reports"), labels: ["Reports"] },
-  { match: (p) => p.startsWith("/documents"), labels: ["Documents"] },
+  {
+    match: (p) => /^\/tasks\/[^/]+/.test(p),
+    labels: ["Work", "Detail"],
+  },
+  { match: (p) => p.startsWith("/tasks"), labels: ["Work"] },
+  { match: (p) => /^\/events\/[^/]+/.test(p), labels: ["Events", "Event"] },
+  { match: (p) => p.startsWith("/events"), labels: ["Events"] },
+  { match: (p) => p.startsWith("/documents"), labels: ["Docs"] },
   { match: (p) => p.startsWith("/messages"), labels: ["Messages"] },
-  { match: (p) => p.startsWith("/my-work"), labels: ["My work"] },
-  { match: (p) => p.startsWith("/suggestions"), labels: ["Suggestions"] },
   { match: (p) => p.startsWith("/admin/structure"), labels: ["Admin", "Structure"] },
   { match: (p) => p.startsWith("/admin/rbac"), labels: ["Admin", "RBAC"] },
   { match: (p) => p.startsWith("/admin"), labels: ["Admin"] },
-  { match: (p) => p.startsWith("/tasks"), labels: ["Board"] },
-  { match: (p) => p.startsWith("/schedule"), labels: ["Schedule"] },
 ];
 
 function truncateCrumb(label: string) {
@@ -68,29 +51,39 @@ function OrgBreadcrumbs({
   className?: string;
 }) {
   const pathname = usePathname();
-  const { committees } = useNavModel();
-  const committeeId = parseCommitteeId(pathname);
+  const taskDetailMatch = pathname.match(/^\/tasks\/([^/]+)/);
+  const taskDetailId = taskDetailMatch?.[1] ?? null;
+  const [workTitle, setWorkTitle] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!taskDetailId) {
+      setWorkTitle(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/tasks/${taskDetailId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled) setWorkTitle(data?.title ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setWorkTitle(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskDetailId]);
 
   const crumbs = useMemo(() => {
     const items: Crumb[] = [{ label: orgName, href: "/" }];
 
-    if (isCommitteeRoute(pathname) && committeeId) {
-      const committee = committees.find((c) => c.id === committeeId);
-      items.push({
-        label: committee?.name ?? "Committee",
-        href: committeePath(committeeId),
-      });
-      const section = parseCommitteeSection(pathname);
-      if (section !== "overview") {
-        items.push({
-          label: SECTION_LABELS[section] ?? section,
-          href: committeePath(committeeId, section),
-        });
-      }
+    if (pathname === "/") return items;
+
+    if (taskDetailId) {
+      items.push({ label: "Work", href: "/tasks" });
+      items.push({ label: workTitle?.trim() || "Detail" });
       return items;
     }
-
-    if (pathname === "/") return items;
 
     const route = TOP_ROUTE_CRUMBS.find((r) => r.match(pathname));
     if (route) {
@@ -100,7 +93,7 @@ function OrgBreadcrumbs({
     }
 
     return items;
-  }, [pathname, orgName, committees, committeeId]);
+  }, [pathname, orgName, taskDetailId, workTitle]);
 
   return (
     <nav
@@ -158,17 +151,15 @@ function WorkspaceSearch({
   value: string;
   onChange: (v: string) => void;
   results: {
-    assignments: { title: string; href: string }[];
-    projects: { title: string; href: string }[];
-    tasks: { title: string; href: string }[];
+    tasks?: { title: string; href: string }[];
+    documents?: { title: string; href: string }[];
   } | null;
   className?: string;
 }) {
   const items = results
     ? [
-        ...results.assignments,
-        ...results.projects,
-        ...results.tasks,
+        ...(results.tasks ?? []).map((t) => ({ ...t, kind: "Work" })),
+        ...(results.documents ?? []).map((d) => ({ ...d, kind: "Doc" })),
       ]
     : [];
 
@@ -178,7 +169,7 @@ function WorkspaceSearch({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Search work…"
+        placeholder="Search work & docs…"
         className="h-9 w-full rounded-lg border border-charcoal/10 bg-surface/60 pl-9 pr-3 text-sm text-charcoal placeholder:text-muted/80 outline-none transition-colors focus:border-primary/40 focus:bg-white"
       />
       {results && (
@@ -193,6 +184,9 @@ function WorkspaceSearch({
                     href={r.href}
                     className="block rounded-lg p-2 hover:bg-charcoal/5"
                   >
+                    <span className="text-[10px] font-semibold uppercase text-muted mr-1.5">
+                      {r.kind}
+                    </span>
                     {r.title}
                   </Link>
                 </li>
@@ -209,16 +203,15 @@ export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, refreshAttention } = useApp();
-  const committeeId = parseCommitteeId(pathname);
-  const onCommitteeRoute = isCommitteeRoute(pathname);
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([]);
   const [searchQ, setSearchQ] = useState("");
   const [searchResults, setSearchResults] = useState<{
-    assignments: { title: string; href: string }[];
-    projects: { title: string; href: string }[];
-    tasks: { title: string; href: string }[];
+    tasks?: { title: string; href: string }[];
+    documents?: { title: string; href: string }[];
   } | null>(null);
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [savingEmailPref, setSavingEmailPref] = useState(false);
 
   const loadAttention = useCallback(() => {
     fetch("/api/attention")
@@ -226,6 +219,14 @@ export function TopBar() {
       .then((d) =>
         setAttentionItems(filterDismissedAttention(d.items ?? [])),
       )
+      .catch(() => undefined);
+    fetch("/api/users/me/notifications")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.emailAttentionEnabled === "boolean") {
+          setEmailNotifications(d.emailAttentionEnabled);
+        }
+      })
       .catch(() => undefined);
   }, []);
 
@@ -256,6 +257,21 @@ export function TopBar() {
     }
   };
 
+  const toggleEmailNotifications = async () => {
+    const next = !emailNotifications;
+    setSavingEmailPref(true);
+    try {
+      const res = await fetch("/api/users/me/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailAttentionEnabled: next }),
+      });
+      if (res.ok) setEmailNotifications(next);
+    } finally {
+      setSavingEmailPref(false);
+    }
+  };
+
   useEffect(() => {
     if (searchQ.length < 2) {
       setSearchResults(null);
@@ -280,8 +296,8 @@ export function TopBar() {
             <div className="flex items-center gap-2 lg:hidden">
               <BrandLogo size={28} className="shrink-0" />
             </div>
-            {/* Committee switcher: mobile only — desktop uses sidebar tree */}
-            <div className="lg:hidden">
+            {/* Group switcher on all breakpoints (sidebar is five peers only) */}
+            <div>
               <CommitteeSelector />
             </div>
             {user.organization?.name && (
@@ -312,7 +328,16 @@ export function TopBar() {
         title="Inbox"
       >
         <div className="max-h-[70vh] space-y-4 overflow-y-auto p-1">
-          <EmailComingSoon />
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-charcoal/10 bg-surface/50 px-3 py-2.5 text-sm">
+            <span className="text-charcoal">Email me when items need action</span>
+            <input
+              type="checkbox"
+              checked={emailNotifications}
+              disabled={savingEmailPref}
+              onChange={() => void toggleEmailNotifications()}
+              className="h-4 w-4 rounded border-charcoal/20"
+            />
+          </label>
           <AttentionFeed
             items={attentionItems}
             compact

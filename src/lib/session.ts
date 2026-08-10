@@ -126,15 +126,6 @@ export function toSessionPayload(user: UserWithRelations) {
           canApproveOptional: supervisory.canApproveOptional,
         }
       : null,
-    presbyteryMembership: supervisory
-      ? {
-          isHead: supervisory.isHead,
-          title: (supervisory.title as "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM") ?? (supervisory.isHead ? "HEAD" : "MEMBER"),
-          customTitle: supervisory.customTitle ?? null,
-          canViewAll: supervisory.canViewAll,
-          canApproveOptional: supervisory.canApproveOptional,
-        }
-      : null,
   };
 }
 

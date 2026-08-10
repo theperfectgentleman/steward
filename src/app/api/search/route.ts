@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@/generated/prisma/client";
 import { asPermissionUser, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewAllCommittees } from "@/lib/types";
+import { tasksPath } from "@/lib/navigation";
 
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -16,42 +18,31 @@ export async function GET(request: Request) {
   const perm = asPermissionUser(auth.user);
   const committeeIds = auth.user.committeeMemberships.map((m) => m.committeeId);
   const global = canViewAllCommittees(perm);
+  const orgId = auth.user.orgContext?.organizationId;
 
-  const [assignments, projects, tasks, users] = await Promise.all([
-    prisma.assignment.findMany({
-      where: {
-        title: { contains: q, mode: "insensitive" },
-        ...(global
-          ? {}
-          : {
-              OR: [
-                { targetCommitteeId: { in: committeeIds } },
-                { createdById: auth.user.id },
-              ],
-            }),
+  const docWhere: Prisma.LibraryDocumentWhereInput = {
+    archivedAt: null,
+    title: { contains: q, mode: "insensitive" },
+    AND: [
+      {
+        OR: orgId
+          ? [{ organizationId: orgId }, { organizationId: null }]
+          : [{ organizationId: null }],
       },
-      select: {
-        id: true,
-        title: true,
-        status: true,
-        targetCommittee: { select: { name: true } },
-      },
-      take: 10,
-    }),
-    prisma.project.findMany({
-      where: {
-        title: { contains: q, mode: "insensitive" },
-        ...(global ? {} : { committeeId: { in: committeeIds } }),
-      },
-      select: {
-        id: true,
-        title: true,
-        status: true,
-        committeeId: true,
-        committee: { select: { name: true } },
-      },
-      take: 10,
-    }),
+    ],
+  };
+
+  if (!global) {
+    (docWhere.AND as Prisma.LibraryDocumentWhereInput[]).push({
+      OR: [
+        { committeeId: { in: committeeIds } },
+        { committeeId: null },
+        { members: { some: { userId: auth.user.id } } },
+      ],
+    });
+  }
+
+  const [tasks, users, documents] = await Promise.all([
     prisma.task.findMany({
       where: {
         title: { contains: q, mode: "insensitive" },
@@ -80,21 +71,28 @@ export async function GET(request: Request) {
       select: { id: true, name: true, role: true },
       take: 10,
     }),
+    prisma.libraryDocument.findMany({
+      where: docWhere,
+      select: {
+        id: true,
+        title: true,
+        tag: true,
+        status: true,
+        committee: { select: { name: true } },
+      },
+      take: 10,
+    }),
   ]);
 
   return NextResponse.json({
-    assignments: assignments.map((a) => ({
-      ...a,
-      href: `/assignments/${a.id}`,
-    })),
-    projects: projects.map((p) => ({
-      ...p,
-      href: `/c/${p.committeeId}/projects/${p.id}`,
-    })),
     tasks: tasks.map((t) => ({
       ...t,
-      href: `/c/${t.committeeId}/tasks?task=${t.id}`,
+      href: tasksPath(t.committeeId, { taskId: t.id }),
     })),
     users,
+    documents: documents.map((d) => ({
+      ...d,
+      href: `/documents/${d.id}`,
+    })),
   });
 }

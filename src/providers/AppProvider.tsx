@@ -66,11 +66,13 @@ export type SessionUser = {
 
 type AppContextValue = {
   user: SessionUser | null;
+  /** Active group filter; null or `"all"` means All my groups */
   activeCommitteeId: string | null;
   attentionCount: number;
   appSettings: OrganizationSettings | null;
   setAttentionCount: (n: number) => void;
   setActiveCommitteeId: (id: string) => void;
+  clearActiveCommitteeId: () => void;
   login: (identifier: string, password: string) => Promise<void>;
   establishSession: (user: SessionUser) => void;
   enterOrganization: (organizationId: string) => Promise<void>;
@@ -101,6 +103,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setActiveCommitteeId = useCallback((id: string) => {
     setActiveCommitteeIdState(id);
     localStorage.setItem(COMMITTEE_KEY, id);
+  }, []);
+
+  const clearActiveCommitteeId = useCallback(() => {
+    setActiveCommitteeIdState(null);
+    localStorage.setItem(COMMITTEE_KEY, "all");
   }, []);
 
   const refreshAppSettings = useCallback(() => {
@@ -134,10 +141,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(SESSION_KEY, data.id);
       if (data.activeOrganizationId && data.committeeIds.length > 0) {
         const stored = localStorage.getItem(COMMITTEE_KEY);
-        if (stored && data.committeeIds.includes(stored)) {
+        if (stored === "all") {
+          setActiveCommitteeIdState(null);
+        } else if (stored && data.committeeIds.includes(stored)) {
           setActiveCommitteeIdState(stored);
         } else {
-          setActiveCommitteeId(data.committeeIds[0]);
+          setActiveCommitteeIdState(null);
+          localStorage.setItem(COMMITTEE_KEY, "all");
         }
       } else {
         setActiveCommitteeIdState(null);
@@ -251,6 +261,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       appSettings,
       setAttentionCount,
       setActiveCommitteeId,
+      clearActiveCommitteeId,
       login,
       establishSession,
       enterOrganization,
@@ -267,6 +278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       attentionCount,
       appSettings,
       setActiveCommitteeId,
+      clearActiveCommitteeId,
       login,
       establishSession,
       enterOrganization,

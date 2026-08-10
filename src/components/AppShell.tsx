@@ -2,6 +2,7 @@
 
 import { SidebarNav } from "./layout/SidebarNav";
 import { TopBar } from "./layout/TopBar";
+import { CommitteeTorBar } from "./layout/CommitteeTorBar";
 import { BottomNav } from "./BottomNav";
 import { WorkFab } from "./WorkFab";
 import { useApp } from "@/providers/AppProvider";
@@ -16,6 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <SidebarNav />
       <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
         <TopBar />
+        <CommitteeTorBar />
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-3 lg:px-5 lg:py-4">
           {children}
         </main>

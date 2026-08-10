@@ -37,9 +37,6 @@ export async function GET(
   const items = await prisma.agendaItem.findMany({
     where: { eventId },
     orderBy: { order: "asc" },
-    include: {
-      assignment: { select: { id: true, title: true } },
-    },
   });
 
   return NextResponse.json(items);
@@ -77,7 +74,6 @@ export async function POST(
 
   const body = (await request.json()) as {
     title?: string;
-    assignmentId?: string | null;
     order?: number;
   };
 
@@ -99,11 +95,7 @@ export async function POST(
     data: {
       eventId,
       title: body.title.trim(),
-      assignmentId: body.assignmentId || null,
       order,
-    },
-    include: {
-      assignment: { select: { id: true, title: true } },
     },
   });
 

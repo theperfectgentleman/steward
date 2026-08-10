@@ -10,19 +10,29 @@ import { FORM_TEXTAREA_CLASS } from "@/lib/form-field";
 import {
   DOCUMENT_SOURCE_LABELS,
   LIBRARY_DOCUMENT_TAG_LABELS,
+  type LibraryDocumentStatus,
   type LibraryDocumentTag,
+  type NativeDocKind,
 } from "@/lib/documents";
 import { formatDate } from "@/lib/dates";
+import { resolveLibraryFileHref } from "@/lib/document-urls";
+import { formatGroupRoleLabel } from "@/lib/work-context";
 import { PageShimmer } from "@/components/loading/PageShimmer";
+import { UniverEditorContainer } from "@/components/univer/UniverEditorContainer";
+import { useApp } from "@/providers/AppProvider";
+import { toPermissionUser } from "@/lib/permissions-client";
 
 type LibraryDoc = {
   id: string;
   title: string;
   tag: LibraryDocumentTag;
   source: "UPLOAD" | "CREATED";
+  kind?: NativeDocKind;
   body: string | null;
+  contentJson?: Record<string, unknown> | null;
   fileName: string | null;
   fileUrl: string | null;
+  storageKey?: string | null;
   mimeType: string | null;
   createdAt: string;
   committee: { id: string; name: string; charterLetter: string } | null;
@@ -36,6 +46,8 @@ function isPdf(doc: LibraryDoc): boolean {
 }
 
 function DocumentStudioInner({ id }: { id: string }) {
+  const { user } = useApp();
+  const perm = user ? toPermissionUser(user) : null;
   const [doc, setDoc] = useState<LibraryDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -136,6 +148,54 @@ function DocumentStudioInner({ id }: { id: string }) {
     );
   }
 
+  // Native / created documents → collaborative Document Studio
+  const fileHref = resolveLibraryFileHref(doc);
+  if (doc.source === "CREATED" || doc.contentJson) {
+    const full = doc as LibraryDoc & {
+      kind?: NativeDocKind;
+      status?: LibraryDocumentStatus;
+      contentJson?: Record<string, unknown> | null;
+      members?: unknown[];
+      myRole?: string | null;
+      canEdit?: boolean;
+      canComment?: boolean;
+      canManage?: boolean;
+      canSubmit?: boolean;
+      canCompleteReview?: boolean;
+      canPublish?: boolean;
+      canReturn?: boolean;
+      canManageLinks?: boolean;
+      canApprove?: boolean;
+    };
+    return (
+      <UniverEditorContainer
+        initialDoc={{
+          id: full.id,
+          title: full.title,
+          tag: full.tag,
+          kind: full.kind || "DOCUMENT",
+          status: full.status || "DRAFT",
+          body: full.body,
+          contentJson: full.contentJson || null,
+          committee: full.committee,
+          uploadedBy: full.uploadedBy,
+          createdAt: full.createdAt,
+          members: full.members as never,
+          myRole: full.myRole as never,
+          canEdit: full.canEdit,
+          canComment: full.canComment,
+          canManage: full.canManage,
+          canSubmit: full.canSubmit,
+          canCompleteReview: full.canCompleteReview,
+          canPublish: full.canPublish,
+          canReturn: full.canReturn,
+          canManageLinks: full.canManageLinks,
+          canApprove: full.canApprove,
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4 pb-20">
       <div>
@@ -146,7 +206,7 @@ function DocumentStudioInner({ id }: { id: string }) {
         <p className="text-sm text-muted mt-1">
           {LIBRARY_DOCUMENT_TAG_LABELS[doc.tag]} · {DOCUMENT_SOURCE_LABELS[doc.source]}
           {doc.committee
-            ? ` · ${doc.committee.charterLetter.toUpperCase()}) ${doc.committee.name}`
+            ? ` · ${formatGroupRoleLabel(perm, doc.committee) || doc.committee.name}`
             : " · Church-wide"}
           {" · "}
           {doc.uploadedBy.name}
@@ -158,11 +218,11 @@ function DocumentStudioInner({ id }: { id: string }) {
       <div className="lg:grid lg:grid-cols-[1fr_320px] lg:gap-4 lg:items-start space-y-4 lg:space-y-0">
         <div className="space-y-4">
           <div className="rounded-xl border border-charcoal/10 bg-white p-4 shadow-xs">
-            {doc.source === "CREATED" && doc.body ? (
+            {(doc.source as string) === "CREATED" && doc.body ? (
               <p className="text-sm text-charcoal whitespace-pre-wrap leading-relaxed">
                 {doc.body}
               </p>
-            ) : doc.fileUrl && isPdf(doc) ? (
+            ) : fileHref && isPdf(doc) ? (
               <div className="space-y-3">
                 {doc.fileName && (
                   <p className="text-sm font-semibold text-charcoal flex items-center gap-2">
@@ -171,13 +231,13 @@ function DocumentStudioInner({ id }: { id: string }) {
                   </p>
                 )}
                 <object
-                  data={doc.fileUrl}
+                  data={fileHref}
                   type="application/pdf"
                   className="w-full min-h-[70vh] rounded-xl border border-charcoal/10"
                 >
                   <iframe
                     title={doc.title}
-                    src={doc.fileUrl}
+                    src={fileHref}
                     className="w-full min-h-[70vh] rounded-xl border border-charcoal/10"
                   />
                 </object>
@@ -192,9 +252,9 @@ function DocumentStudioInner({ id }: { id: string }) {
                     {doc.body}
                   </p>
                 )}
-                {doc.fileUrl && (
+                {fileHref && (
                   <a
-                    href={doc.fileUrl}
+                    href={fileHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
@@ -203,7 +263,7 @@ function DocumentStudioInner({ id }: { id: string }) {
                     Open attachment
                   </a>
                 )}
-                {!doc.body && !doc.fileUrl && (
+                {!doc.body && !fileHref && (
                   <p className="text-sm text-muted">No content available.</p>
                 )}
               </div>
@@ -290,7 +350,7 @@ function DocumentStudioInner({ id }: { id: string }) {
 
 export function DocumentStudioView({ id }: { id: string }) {
   return (
-    <AuthGate>
+    <AuthGate immersive>
       <DocumentStudioInner id={id} />
     </AuthGate>
   );

@@ -35,7 +35,8 @@ function RbacConsole() {
     supervisoryLabel: "Supervisory Group",
     committeeLabel: "Committee",
   });
-  const [approvalStack, setApprovalStack] = useState<ApprovalStackStep[]>([]);
+  const [directiveStack, setDirectiveStack] = useState<ApprovalStackStep[]>([]);
+  const [committeeStack, setCommitteeStack] = useState<ApprovalStackStep[]>([]);
   const [saving, setSaving] = useState(false);
   const [savingStack, setSavingStack] = useState(false);
 
@@ -50,9 +51,14 @@ function RbacConsole() {
         supervisoryLabel: appSettings.supervisoryLabel,
         committeeLabel: appSettings.committeeLabel,
       });
-      setApprovalStack(
-        Array.isArray(appSettings.approvalStack)
-          ? [...appSettings.approvalStack].sort((a, b) => a.order - b.order)
+      setDirectiveStack(
+        Array.isArray(appSettings.directiveApprovalStack)
+          ? [...appSettings.directiveApprovalStack].sort((a, b) => a.order - b.order)
+          : [],
+      );
+      setCommitteeStack(
+        Array.isArray(appSettings.committeeApprovalStack)
+          ? [...appSettings.committeeApprovalStack].sort((a, b) => a.order - b.order)
           : [],
       );
     }
@@ -78,28 +84,37 @@ function RbacConsole() {
     }
   };
 
-  const saveApprovalStack = async () => {
+  const saveApprovalStacks = async () => {
     setSavingStack(true);
     try {
-      const normalized = approvalStack.map((step, index) => ({
-        ...step,
-        order: index + 1,
-        label: step.label.trim() || ROLE_DEFAULT_LABELS[step.role],
-      }));
+      const normalize = (stack: ApprovalStackStep[]) =>
+        stack.map((step, index) => ({
+          ...step,
+          order: index + 1,
+          label: step.label.trim() || ROLE_DEFAULT_LABELS[step.role],
+        }));
+      const directiveApprovalStack = normalize(directiveStack);
+      const committeeApprovalStack = normalize(committeeStack);
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvalStack: normalized }),
+        body: JSON.stringify({ directiveApprovalStack, committeeApprovalStack }),
       });
-      setApprovalStack(normalized);
+      setDirectiveStack(directiveApprovalStack);
+      setCommitteeStack(committeeApprovalStack);
       refreshAppSettings();
     } finally {
       setSavingStack(false);
     }
   };
 
-  const updateStep = (index: number, patch: Partial<ApprovalStackStep>) => {
-    setApprovalStack((prev) =>
+  const updateStep = (
+    which: "directive" | "committee",
+    index: number,
+    patch: Partial<ApprovalStackStep>,
+  ) => {
+    const setter = which === "directive" ? setDirectiveStack : setCommitteeStack;
+    setter((prev) =>
       prev.map((step, i) => {
         if (i !== index) return step;
         const next = { ...step, ...patch };
@@ -111,27 +126,34 @@ function RbacConsole() {
     );
   };
 
-  const addStep = () => {
-    setApprovalStack((prev) => [
+  const addStep = (which: "directive" | "committee") => {
+    const setter = which === "directive" ? setDirectiveStack : setCommitteeStack;
+    setter((prev) => [
       ...prev,
       {
         order: prev.length + 1,
-        role: "COMMITTEE_CHAIR",
-        label: ROLE_DEFAULT_LABELS.COMMITTEE_CHAIR,
+        role: "COMMITTEE_SECRETARY",
+        label: ROLE_DEFAULT_LABELS.COMMITTEE_SECRETARY,
       },
     ]);
   };
 
-  const removeStep = (index: number) => {
-    setApprovalStack((prev) =>
+  const removeStep = (which: "directive" | "committee", index: number) => {
+    const setter = which === "directive" ? setDirectiveStack : setCommitteeStack;
+    setter((prev) =>
       prev
         .filter((_, i) => i !== index)
         .map((step, i) => ({ ...step, order: i + 1 })),
     );
   };
 
-  const moveStep = (index: number, direction: -1 | 1) => {
-    setApprovalStack((prev) => {
+  const moveStep = (
+    which: "directive" | "committee",
+    index: number,
+    direction: -1 | 1,
+  ) => {
+    const setter = which === "directive" ? setDirectiveStack : setCommitteeStack;
+    setter((prev) => {
       const next = [...prev];
       const target = index + direction;
       if (target < 0 || target >= next.length) return prev;
@@ -170,7 +192,6 @@ function RbacConsole() {
     "logMinutes",
     "approveMinutes",
     "invite",
-    "submitReports",
     "updateAssignedTasks",
   ];
 
@@ -245,81 +266,102 @@ function RbacConsole() {
         </TouchButton>
       </section>
 
-      <section className="rounded-2xl border border-border bg-surface-raised p-4 space-y-4">
+      <section className="rounded-2xl border border-border bg-surface-raised p-4 space-y-6">
         <div>
-          <h2 className="font-semibold">Approval stack</h2>
+          <h2 className="font-semibold">Approval stacks</h2>
           <p className="text-sm text-muted mt-1">
-            Ordered steps required when an assignment is escalated for review.
+            Directives use a 4-step ladder by default; work uses 2.
+            Personal steps have no review.
           </p>
         </div>
-        {approvalStack.length === 0 ? (
-          <p className="text-sm text-muted">No steps yet. Add at least one role.</p>
-        ) : (
-          <ul className="space-y-3">
-            {approvalStack.map((step, index) => (
-              <li
-                key={`${step.order}-${index}`}
-                className="rounded-xl border border-border p-3 space-y-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Step {index + 1}
-                  </span>
-                  <div className="flex gap-2">
-                    <TouchButton
-                      variant="secondary"
-                      disabled={index === 0}
-                      onClick={() => moveStep(index, -1)}
+
+        {(
+          [
+            {
+              key: "directive" as const,
+              title: "Directive stack",
+              stack: directiveStack,
+            },
+            {
+              key: "committee" as const,
+              title: "Work stack",
+              stack: committeeStack,
+            },
+          ] as const
+        ).map(({ key, title, stack }) => (
+          <div key={key} className="space-y-3">
+            <h3 className="text-sm font-semibold text-charcoal">{title}</h3>
+            {stack.length === 0 ? (
+              <p className="text-sm text-muted">No steps yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {stack.map((step, index) => (
+                  <li
+                    key={`${key}-${step.order}-${index}`}
+                    className="rounded-xl border border-border p-3 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                        Step {index + 1}
+                      </span>
+                      <div className="flex gap-2">
+                        <TouchButton
+                          variant="secondary"
+                          disabled={index === 0}
+                          onClick={() => moveStep(key, index, -1)}
+                        >
+                          Up
+                        </TouchButton>
+                        <TouchButton
+                          variant="secondary"
+                          disabled={index === stack.length - 1}
+                          onClick={() => moveStep(key, index, 1)}
+                        >
+                          Down
+                        </TouchButton>
+                        <TouchButton
+                          variant="secondary"
+                          onClick={() => removeStep(key, index)}
+                        >
+                          Remove
+                        </TouchButton>
+                      </div>
+                    </div>
+                    <FormSelect
+                      value={step.role}
+                      onChange={(e) =>
+                        updateStep(key, index, {
+                          role: e.target.value as ApprovalStackRole,
+                        })
+                      }
                     >
-                      Up
-                    </TouchButton>
-                    <TouchButton
-                      variant="secondary"
-                      disabled={index === approvalStack.length - 1}
-                      onClick={() => moveStep(index, 1)}
-                    >
-                      Down
-                    </TouchButton>
-                    <TouchButton
-                      variant="secondary"
-                      onClick={() => removeStep(index)}
-                    >
-                      Remove
-                    </TouchButton>
-                  </div>
-                </div>
-                <FormSelect
-                  value={step.role}
-                  onChange={(e) =>
-                    updateStep(index, {
-                      role: e.target.value as ApprovalStackRole,
-                    })
-                  }
-                >
-                  {APPROVAL_ROLE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </FormSelect>
-                <input
-                  className={FORM_FIELD_CLASS}
-                  value={step.label}
-                  onChange={(e) => updateStep(index, { label: e.target.value })}
-                  placeholder="Step label"
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="flex flex-wrap gap-3">
-          <TouchButton variant="secondary" onClick={addStep}>
-            Add step
-          </TouchButton>
-          <TouchButton onClick={saveApprovalStack} disabled={savingStack}>
-            {savingStack ? "Saving…" : "Save approval stack"}
-          </TouchButton>
-        </div>
+                      {APPROVAL_ROLE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </FormSelect>
+                    <input
+                      className={FORM_FIELD_CLASS}
+                      value={step.label}
+                      onChange={(e) =>
+                        updateStep(key, index, { label: e.target.value })
+                      }
+                      placeholder="Step label"
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <TouchButton variant="secondary" onClick={() => addStep(key)}>
+              Add {key} step
+            </TouchButton>
+          </div>
+        ))}
+
+        <TouchButton onClick={saveApprovalStacks} disabled={savingStack}>
+          {savingStack ? "Saving…" : "Save approval stacks"}
+        </TouchButton>
       </section>
 
       <section className="rounded-2xl border border-border bg-surface-raised p-4 space-y-4">

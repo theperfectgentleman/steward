@@ -26,7 +26,7 @@ const sourceSerif = Source_Serif_4({
 export const metadata: Metadata = {
   title: "Steward — Church Committee Workspace",
   description:
-    "Unified church committee workspace for task management, scheduling, and minutes.",
+    "Unified church committee workspace for work management, scheduling, and minutes.",
   applicationName: "Steward",
   manifest: "/manifest.json",
   icons: {

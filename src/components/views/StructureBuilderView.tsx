@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { TouchButton } from "@/components/TouchButton";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
+import { SUPERVISORY_TITLE_LABELS, type SupervisoryTitle } from "@/lib/types";
 import { useApp } from "@/providers/AppProvider";
 import { InviteMemberSheet } from "@/components/InviteMemberSheet";
 import {
@@ -29,6 +30,8 @@ type StructurePayload = {
     members: {
       id: string;
       isHead: boolean;
+      title?: SupervisoryTitle;
+      customTitle?: string | null;
       user: { id: string; name: string; email?: string };
     }[];
   } | null;
@@ -124,7 +127,7 @@ export function StructureBuilderView() {
   const openInvite = (committeeId: string | null) => {
     if (!committeeId) {
       // Supervisory invites: use roster management in Admin for now
-      window.location.href = "/admin?tab=presbytery";
+      window.location.href = "/admin";
       return;
     }
     setInviteCommitteeId(committeeId);
@@ -201,7 +204,13 @@ export function StructureBuilderView() {
                   className="rounded-xl bg-white/70 px-3 py-2 text-sm"
                 >
                   {m.user.name}
-                  {m.isHead ? " · Head" : ""}
+                  {m.isHead
+                    ? " · Head"
+                    : m.customTitle
+                      ? ` · ${m.customTitle}`
+                      : m.title
+                        ? ` · ${SUPERVISORY_TITLE_LABELS[m.title]}`
+                        : ""}
                 </li>
               ))}
               {!data.supervisory?.members.length && (

@@ -9,8 +9,9 @@ import { getEventWithProgress } from "@/lib/event-queries";
 import { prisma } from "@/lib/prisma";
 import { canEditTasks } from "@/lib/types";
 import type { ScheduleFormat, ScheduleKind } from "@/lib/types";
+import { EVENT_KINDS } from "@/lib/event-kinds";
 
-const KINDS: ScheduleKind[] = ["MEETING", "EVENT"];
+const KINDS: ScheduleKind[] = EVENT_KINDS;
 const FORMATS: ScheduleFormat[] = ["IN_PERSON", "VIRTUAL", "HYBRID"];
 
 function requireCommitteeId(committeeId: string | null) {
@@ -95,6 +96,7 @@ export async function PATCH(
     body.startDate !== undefined ? new Date(body.startDate) : undefined;
 
   await prisma.$transaction(async (tx) => {
+    const nextKind = kind ?? existing.kind;
     await tx.event.update({
       where: { id },
       data: {
@@ -125,6 +127,26 @@ export async function PATCH(
         data: {
           ...(body.title !== undefined && { title: body.title }),
           ...(startDate !== undefined && { date: startDate }),
+        },
+      });
+    } else if (nextKind === "MEETING") {
+      const roster = await tx.committeeMember.findMany({
+        where: { committeeId: existing.committeeId! },
+        select: { userId: true },
+      });
+      await tx.meeting.create({
+        data: {
+          title: body.title ?? existing.title,
+          date: startDate ?? existing.startDate,
+          committeeId: existing.committeeId!,
+          eventId: id,
+          createdById: auth.user.id,
+          attendances: {
+            create: roster.map((m) => ({
+              userId: m.userId,
+              status: "UNMARKED",
+            })),
+          },
         },
       });
     }

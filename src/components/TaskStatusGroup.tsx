@@ -1,27 +1,32 @@
 "use client";
 
 import { useState, type MutableRefObject } from "react";
+import Link from "next/link";
 import { Check, GripVertical, ListTodo } from "lucide-react";
-import { BottomSheet } from "@/components/BottomSheet";
-import { CopyLinkButton } from "@/components/CopyLinkButton";
+import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { taskPath } from "@/lib/navigation";
 import { LIST_STATUS_META } from "@/lib/kanban";
-import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/types";
+import {
+  TASK_WORK_CLASS_LABELS,
+  type TaskStatus,
+  type TaskWorkClass,
+} from "@/lib/types";
 import { formatDate } from "@/lib/dates";
 
 export type TaskListItem = {
   id: string;
   title: string;
   status: TaskStatus;
+  workClass?: TaskWorkClass | null;
   description?: string | null;
   dueDate?: string | null;
   assignedTo: { id: string; name: string } | null;
   eventTitle?: string | null;
   isSubtask?: boolean;
-  reviewAssignmentId?: string | null;
+  contextLabel?: string | null;
+  canSubmitReview?: boolean;
+  canApproveReview?: boolean;
 };
-
-type Member = { id: string; name: string };
 
 function initials(name: string) {
   return name
@@ -38,13 +43,14 @@ type TaskStatusGroupProps = {
   committeeId?: string;
   userId: string;
   canEdit: boolean;
-  members: Member[];
   highlightedTaskId?: string | null;
   taskRefs?: MutableRefObject<Record<string, HTMLElement | null>>;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
   onDelete?: (id: string) => void;
-  onSubmitReview?: (assignmentId: string) => void;
+  onSubmitReview?: (taskId: string) => void;
+  onApproveReview?: (taskId: string) => void;
+  onReturnReview?: (taskId: string) => void;
 };
 
 export function TaskStatusGroup({
@@ -53,13 +59,10 @@ export function TaskStatusGroup({
   committeeId,
   userId,
   canEdit,
-  members,
   highlightedTaskId,
   taskRefs,
   onStatusChange,
   onAssign,
-  onDelete,
-  onSubmitReview,
 }: TaskStatusGroupProps) {
   const meta = LIST_STATUS_META[status];
   const [isDragOver, setIsDragOver] = useState(false);
@@ -115,20 +118,17 @@ export function TaskStatusGroup({
             committeeId={committeeId}
             userId={userId}
             canEdit={canEdit}
-            members={members}
             highlighted={highlightedTaskId === task.id}
             rowRef={(el) => {
               if (taskRefs) taskRefs.current[task.id] = el;
             }}
             onStatusChange={onStatusChange}
             onAssign={onAssign}
-            onDelete={onDelete}
-            onSubmitReview={onSubmitReview}
           />
         ))}
         {tasks.length === 0 && (
           <li className="px-3 py-5 text-center text-sm text-muted">
-            No tasks
+            No items
           </li>
         )}
       </ul>
@@ -141,37 +141,26 @@ function TaskListRow({
   committeeId,
   userId,
   canEdit,
-  members,
   highlighted,
   rowRef,
   onStatusChange,
   onAssign,
-  onDelete,
-  onSubmitReview,
 }: {
   task: TaskListItem;
   committeeId?: string;
   userId: string;
   canEdit: boolean;
-  members: Member[];
   highlighted?: boolean;
   rowRef?: (el: HTMLElement | null) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
-  onDelete?: (id: string) => void;
-  onSubmitReview?: (assignmentId: string) => void;
 }) {
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const isAssignee = task.assignedTo?.id === userId;
   const canUpdateStatus = canEdit || isAssignee;
   const done = task.status === "DONE";
   const dueLabel = task.dueDate ? formatDate(task.dueDate) : null;
-
-  const showSubmitReview =
-    Boolean(task.reviewAssignmentId) &&
-    isAssignee &&
-    done &&
-    typeof onSubmitReview === "function";
+  const href = committeeId ? taskPath(committeeId, task.id) : `/tasks/${task.id}`;
 
   const toggleDone = () => {
     if (!canUpdateStatus) return;
@@ -213,11 +202,7 @@ function TaskListRow({
         {done && <Check className="h-3 w-3" strokeWidth={3} />}
       </button>
 
-      <button
-        type="button"
-        onClick={() => setSheetOpen(true)}
-        className="min-w-0 flex-1 text-left py-0.5"
-      >
+      <Link href={href} className="min-w-0 flex-1 text-left py-0.5">
         <span
           className={`block text-sm font-medium leading-snug truncate ${
             done ? "text-muted line-through" : "text-charcoal"
@@ -225,19 +210,26 @@ function TaskListRow({
         >
           {task.isSubtask ? `↳ ${task.title}` : task.title}
         </span>
-        {(task.eventTitle || dueLabel) && (
+        {(task.workClass || task.eventTitle || dueLabel) && (
           <span className="mt-0.5 block text-[11px] text-muted truncate">
-            {[task.eventTitle, dueLabel ? `Due ${dueLabel}` : null]
+            {[
+              task.workClass
+                ? TASK_WORK_CLASS_LABELS[task.workClass]
+                : null,
+              task.eventTitle,
+              dueLabel ? `Due ${dueLabel}` : null,
+            ]
               .filter(Boolean)
               .join(" · ")}
           </span>
         )}
-      </button>
+      </Link>
 
       <button
         type="button"
-        onClick={() => canEdit && setSheetOpen(true)}
-        className="shrink-0"
+        onClick={() => canEdit && setAssignOpen(true)}
+        disabled={!canEdit}
+        className="shrink-0 disabled:cursor-default"
         aria-label={
           task.assignedTo
             ? `Assigned to ${task.assignedTo.name}`
@@ -256,100 +248,20 @@ function TaskListRow({
         )}
       </button>
 
-      <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={task.title}>
-        <div className="space-y-4">
-          {task.description && (
-            <p className="text-sm text-muted leading-relaxed">{task.description}</p>
-          )}
-
-          {canUpdateStatus && (
-            <label className="block">
-              <span className="text-xs font-bold uppercase tracking-wider text-muted">
-                Status
-              </span>
-              <select
-                value={task.status}
-                onChange={(e) => {
-                  onStatusChange(task.id, e.target.value as TaskStatus);
-                  setSheetOpen(false);
-                }}
-                className="mt-1.5 w-full rounded-lg border border-charcoal/10 bg-surface px-3 py-2.5 text-sm font-semibold text-charcoal"
-              >
-                {TASK_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {TASK_STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {canEdit && (
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                Assign to
-              </p>
-              <ul className="space-y-2 max-h-48 overflow-y-auto">
-                {members.length === 0 && (
-                  <li className="text-sm text-muted py-2">No members yet.</li>
-                )}
-                {members.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onAssign(task.id, m.id);
-                        setSheetOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border touch-target text-left ${
-                        task.assignedTo?.id === m.id
-                          ? "border-primary bg-primary/5"
-                          : "border-charcoal/10 hover:border-primary/40"
-                      }`}
-                    >
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-charcoal text-white text-xs font-bold">
-                        {initials(m.name)}
-                      </span>
-                      <span className="text-sm font-semibold">{m.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {showSubmitReview && task.reviewAssignmentId && (
-            <button
-              type="button"
-              onClick={() => {
-                onSubmitReview?.(task.reviewAssignmentId!);
-                setSheetOpen(false);
-              }}
-              className="w-full touch-target rounded-lg bg-primary/15 text-charcoal text-sm font-semibold border border-primary/30"
-            >
-              Submit assignment for review
-            </button>
-          )}
-
-          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-charcoal/8">
-            {committeeId && (
-              <CopyLinkButton path={taskPath(committeeId, task.id)} label="Copy link" />
-            )}
-            {canEdit && onDelete && (
-              <button
-                type="button"
-                onClick={() => {
-                  onDelete(task.id);
-                  setSheetOpen(false);
-                }}
-                className="text-sm font-semibold text-accent hover:underline"
-              >
-                Delete
-              </button>
-            )}
-          </div>
-        </div>
-      </BottomSheet>
+      {canEdit && (
+        <PeoplePicker
+          open={assignOpen}
+          onClose={() => setAssignOpen(false)}
+          title="Assign Task"
+          mode="single"
+          committeeId={committeeId}
+          excludeIds={task.assignedTo?.id ? [task.assignedTo.id] : []}
+          onConfirm={(ids) => {
+            if (ids[0]) onAssign(task.id, ids[0]);
+            setAssignOpen(false);
+          }}
+        />
+      )}
     </li>
   );
 }

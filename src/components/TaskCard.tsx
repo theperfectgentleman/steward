@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Calendar, Trash2, User } from "lucide-react";
 import { CopyLinkButton } from "./CopyLinkButton";
 import { taskPath } from "@/lib/navigation";
 import { SegmentedControl } from "./SegmentedControl";
-import { BottomSheet } from "./BottomSheet";
+import { PeoplePicker } from "@/components/people/PeoplePicker";
 import { TaskHoverPreview } from "./TaskHoverPreview";
-import type { TaskStatus } from "@/lib/types";
+import type { TaskStatus, TaskWorkClass } from "@/lib/types";
 import {
   TASK_STATUS_LABELS,
   TASK_STATUSES,
+  TASK_WORK_CLASS_LABELS,
 } from "@/lib/types";
 import { LIST_STATUS_META } from "@/lib/kanban";
 import { formatDate } from "@/lib/dates";
@@ -22,13 +24,13 @@ type TaskCardProps = {
   title: string;
   description?: string | null;
   status: TaskStatus;
+  workClass?: TaskWorkClass | null;
   dueDate?: string | null;
   assigneeName?: string | null;
   assignedToId?: string | null;
   currentUserId: string;
   canEdit: boolean;
   isAssignee: boolean;
-  members?: { id: string; name: string }[];
   layout?: "card" | "kanban";
   isSubtask?: boolean;
   eventTitle?: string | null;
@@ -41,9 +43,26 @@ type TaskCardProps = {
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
   onDelete?: (id: string) => void;
-  reviewAssignmentId?: string | null;
-  onSubmitReview?: (assignmentId: string) => void;
+  /** Multi-hat label e.g. "Finance · Chair" */
+  contextLabel?: string | null;
+  /** Show Send for review when task can enter review ladder */
+  canSubmitReview?: boolean;
+  onSubmitReview?: (taskId: string) => void;
+  /** Waiting for my review */
+  canApproveReview?: boolean;
+  onApproveReview?: (taskId: string) => void;
+  onReturnReview?: (taskId: string) => void;
 };
+
+function workClassBadgeClass(workClass: TaskWorkClass) {
+  if (workClass === "DIRECTIVE") {
+    return "text-primary bg-primary/10";
+  }
+  if (workClass === "PERSONAL") {
+    return "text-muted bg-slate-100";
+  }
+  return "text-charcoal-muted bg-slate-100";
+}
 
 function initials(name: string) {
   return name
@@ -59,13 +78,13 @@ export function TaskCard({
   title,
   description,
   status,
+  workClass,
   dueDate,
   assigneeName,
   assignedToId,
   currentUserId,
   canEdit,
   isAssignee,
-  members = [],
   layout = "card",
   isSubtask = false,
   eventTitle,
@@ -73,18 +92,21 @@ export function TaskCard({
   onStatusChange,
   onAssign,
   onDelete,
-  reviewAssignmentId,
+  contextLabel,
+  canSubmitReview = false,
   onSubmitReview,
+  canApproveReview = false,
+  onApproveReview,
+  onReturnReview,
 }: TaskCardProps) {
   const [assignOpen, setAssignOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const showSubmitReview =
+    canSubmitReview && typeof onSubmitReview === "function";
+  const showApprove =
+    canApproveReview && typeof onApproveReview === "function";
   const canAssign = canEdit;
   const canUpdateStatus = canEdit || isAssignee;
-  const showSubmitReview =
-    Boolean(reviewAssignmentId) &&
-    isAssignee &&
-    status === "DONE" &&
-    typeof onSubmitReview === "function";
 
   const dueLabel = dueDate ? formatDate(dueDate) : null;
   const plainDescription = description ? richTextToPlain(description) : "";
@@ -118,22 +140,44 @@ export function TaskCard({
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              {isSubtask && (
+              {contextLabel && (
+                <p className="text-[10px] font-semibold text-muted mb-1 truncate">
+                  {contextLabel}
+                </p>
+              )}
+              {workClass ? (
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded mb-1 inline-block ${workClassBadgeClass(workClass)}`}
+                >
+                  {TASK_WORK_CLASS_LABELS[workClass]}
+                </span>
+              ) : isSubtask ? (
                 <span className="text-[10px] font-bold uppercase tracking-wide text-muted bg-slate-100 px-1.5 py-0.5 rounded mb-1 inline-block">
                   Subtask
                 </span>
-              )}
+              ) : null}
               {eventTitle && !isSubtask && (
                 <p className="text-[10px] font-bold uppercase tracking-wide text-accent mb-1 truncate">
                   {eventTitle}
                 </p>
               )}
-              <h3
-                data-task-title
-                className="font-bold text-charcoal leading-snug line-clamp-2"
-              >
-                {title}
-              </h3>
+              {committeeId ? (
+                <Link
+                  href={taskPath(committeeId, id)}
+                  onClick={(e) => e.stopPropagation()}
+                  data-task-title
+                  className="font-bold text-charcoal leading-snug line-clamp-2 hover:text-primary transition-colors"
+                >
+                  {title}
+                </Link>
+              ) : (
+                <h3
+                  data-task-title
+                  className="font-bold text-charcoal leading-snug line-clamp-2"
+                >
+                  {title}
+                </h3>
+              )}
               {plainDescription && (
                 <p
                   data-task-desc
@@ -215,14 +259,32 @@ export function TaskCard({
                 iconOnly
               />
             )}
-            {showSubmitReview && reviewAssignmentId && (
+            {showSubmitReview && (
               <button
                 type="button"
-                onClick={() => onSubmitReview?.(reviewAssignmentId)}
+                onClick={() => onSubmitReview?.(id)}
                 className="text-xs font-bold text-primary hover:underline touch-target px-1"
               >
-                Submit for review
+                Send for review
               </button>
+            )}
+            {showApprove && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onApproveReview?.(id)}
+                  className="text-xs font-bold text-primary hover:underline touch-target px-1"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onReturnReview?.(id)}
+                  className="text-xs font-bold text-accent hover:underline touch-target px-1"
+                >
+                  Return
+                </button>
+              </>
             )}
             {canUpdateStatus && (
               <select
@@ -240,12 +302,15 @@ export function TaskCard({
             )}
           </div>
 
-          <AssignSheet
+          <PeoplePicker
             open={assignOpen}
             onClose={() => setAssignOpen(false)}
-            members={members}
-            onPick={(userId) => {
-              onAssign(id, userId);
+            title="Assign Task"
+            mode="single"
+            committeeId={committeeId}
+            excludeIds={assignedToId ? [assignedToId] : []}
+            onConfirm={(ids) => {
+              if (ids[0]) onAssign(id, ids[0]);
               setAssignOpen(false);
             }}
           />
@@ -273,17 +338,32 @@ export function TaskCard({
     <article className={`bg-white rounded-xl border border-charcoal/5 p-3 space-y-3 shadow-2xs ${isSubtask ? "ml-3 border-l-4 border-l-primary/40" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {isSubtask && (
+          {workClass ? (
+            <span
+              className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded mb-1 inline-block ${workClassBadgeClass(workClass)}`}
+            >
+              {TASK_WORK_CLASS_LABELS[workClass]}
+            </span>
+          ) : isSubtask ? (
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted bg-slate-100 px-1.5 py-0.5 rounded mb-1 inline-block">
               Subtask
             </span>
-          )}
+          ) : null}
           {eventTitle && !isSubtask && (
             <p className="text-[10px] font-bold uppercase tracking-wide text-accent mb-1">
               {eventTitle}
             </p>
           )}
-          <h3 className="text-lg font-bold text-charcoal">{title}</h3>
+          {committeeId ? (
+            <Link
+              href={taskPath(committeeId, id)}
+              className="text-lg font-bold text-charcoal hover:text-primary transition-colors"
+            >
+              {title}
+            </Link>
+          ) : (
+            <h3 className="text-lg font-bold text-charcoal">{title}</h3>
+          )}
           {description && (
             <p className="text-sm text-muted mt-1 leading-relaxed">{description}</p>
           )}
@@ -316,14 +396,36 @@ export function TaskCard({
         </div>
       )}
 
-      {showSubmitReview && reviewAssignmentId && (
+      {contextLabel && (
+        <p className="text-xs font-semibold text-muted">{contextLabel}</p>
+      )}
+
+      {showSubmitReview && (
         <button
           type="button"
-          onClick={() => onSubmitReview?.(reviewAssignmentId)}
+          onClick={() => onSubmitReview?.(id)}
           className="w-full touch-target rounded-lg bg-primary/15 text-charcoal text-sm font-semibold border border-primary/30"
         >
-          Submit assignment for review
+          Send for review
         </button>
+      )}
+      {showApprove && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onApproveReview?.(id)}
+            className="flex-1 touch-target rounded-lg bg-primary/15 text-charcoal text-sm font-semibold border border-primary/30"
+          >
+            Approve step
+          </button>
+          <button
+            type="button"
+            onClick={() => onReturnReview?.(id)}
+            className="flex-1 touch-target rounded-lg bg-accent/10 text-accent text-sm font-semibold border border-accent/30"
+          >
+            Return
+          </button>
+        </div>
       )}
 
       {dueLabel && (
@@ -348,12 +450,15 @@ export function TaskCard({
         </span>
       </button>
 
-      <AssignSheet
+      <PeoplePicker
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
-        members={members}
-        onPick={(userId) => {
-          onAssign(id, userId);
+        title="Assign Task"
+        mode="single"
+        committeeId={committeeId}
+        excludeIds={assignedToId ? [assignedToId] : []}
+        onConfirm={(ids) => {
+          if (ids[0]) onAssign(id, ids[0]);
           setAssignOpen(false);
         }}
       />
@@ -373,43 +478,5 @@ export function TaskCard({
         </ul>
       )}
     </article>
-  );
-}
-
-function AssignSheet({
-  open,
-  onClose,
-  members,
-  onPick,
-}: {
-  open: boolean;
-  onClose: () => void;
-  members: { id: string; name: string }[];
-  onPick: (userId: string) => void;
-}) {
-  return (
-    <BottomSheet open={open} onClose={onClose} title="Assign Task">
-      <ul className="space-y-4">
-        {members.length === 0 && (
-          <li className="text-sm text-muted text-center py-4">
-            No committee members assigned yet. Add members in Admin.
-          </li>
-        )}
-        {members.map((m) => (
-          <li key={m.id}>
-            <button
-              type="button"
-              onClick={() => onPick(m.id)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl border border-charcoal/10 hover:border-primary touch-target"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-charcoal text-white text-sm font-bold">
-                {initials(m.name)}
-              </span>
-              <span className="font-semibold">{m.name}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </BottomSheet>
   );
 }

@@ -14,21 +14,3 @@ export function ComingSoonBanner({
     </div>
   );
 }
-
-export function EmailComingSoon({ className }: { className?: string }) {
-  return (
-    <ComingSoonBanner
-      message="Email notifications coming soon"
-      className={className}
-    />
-  );
-}
-
-export function DocumentUploadsComingSoon({ className }: { className?: string }) {
-  return (
-    <ComingSoonBanner
-      message="Document uploads coming soon"
-      className={className}
-    />
-  );
-}

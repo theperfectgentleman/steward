@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type MutableRefObject } from "react";
-import type { TaskStatus } from "@/lib/types";
+import type { TaskStatus, TaskWorkClass } from "@/lib/types";
 import { LIST_STATUS_META } from "@/lib/kanban";
 import { TaskCard } from "@/components/TaskCard";
 
@@ -10,14 +10,15 @@ type Task = {
   title: string;
   description: string | null;
   status: TaskStatus;
+  workClass?: TaskWorkClass | null;
   dueDate: string | null;
   assignedTo: { id: string; name: string } | null;
   eventTitle?: string | null;
   isSubtask?: boolean;
-  reviewAssignmentId?: string | null;
+  contextLabel?: string | null;
+  canSubmitReview?: boolean;
+  canApproveReview?: boolean;
 };
-
-type Member = { id: string; name: string };
 
 type KanbanColumnProps = {
   status: TaskStatus;
@@ -25,13 +26,14 @@ type KanbanColumnProps = {
   committeeId?: string;
   userId: string;
   canEdit: boolean;
-  members: Member[];
   highlightedTaskId?: string | null;
   taskRefs?: MutableRefObject<Record<string, HTMLElement | null>>;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, userId: string) => void;
   onDelete?: (id: string) => void;
-  onSubmitReview?: (assignmentId: string) => void;
+  onSubmitReview?: (taskId: string) => void;
+  onApproveReview?: (taskId: string) => void;
+  onReturnReview?: (taskId: string) => void;
 };
 
 export function KanbanColumn({
@@ -40,13 +42,14 @@ export function KanbanColumn({
   committeeId,
   userId,
   canEdit,
-  members,
   highlightedTaskId,
   taskRefs,
   onStatusChange,
   onAssign,
   onDelete,
   onSubmitReview,
+  onApproveReview,
+  onReturnReview,
 }: KanbanColumnProps) {
   const meta = LIST_STATUS_META[status];
   const [isDragOver, setIsDragOver] = useState(false);
@@ -107,27 +110,31 @@ export function KanbanColumn({
               title={task.title}
               description={task.description}
               status={task.status}
+              workClass={task.workClass}
               dueDate={task.dueDate}
               assigneeName={task.assignedTo?.name}
               assignedToId={task.assignedTo?.id}
               currentUserId={userId}
               canEdit={canEdit}
               isAssignee={task.assignedTo?.id === userId}
-              members={members}
               isSubtask={task.isSubtask}
               eventTitle={task.eventTitle}
+              contextLabel={task.contextLabel}
               onStatusChange={onStatusChange}
               onAssign={onAssign}
               onDelete={onDelete}
-              reviewAssignmentId={task.reviewAssignmentId}
+              canSubmitReview={task.canSubmitReview}
+              canApproveReview={task.canApproveReview}
               onSubmitReview={onSubmitReview}
+              onApproveReview={onApproveReview}
+              onReturnReview={onReturnReview}
             />
           </div>
         ))}
 
         {tasks.length === 0 && (
           <div className="rounded-lg border border-dashed border-charcoal/12 bg-surface/50 px-3 py-6 text-center">
-            <p className="text-sm text-muted">No tasks</p>
+            <p className="text-sm text-muted">No items</p>
           </div>
         )}
       </div>

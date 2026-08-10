@@ -67,7 +67,6 @@ export async function POST(request: Request) {
     committeeIds: [],
     committeeMemberships: [],
     supervisoryMembership: null,
-    presbyteryMembership: null,
   };
 
   const response = NextResponse.json(payload);

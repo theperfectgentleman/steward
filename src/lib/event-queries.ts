@@ -30,9 +30,6 @@ export async function getEventWithProgress(eventId: string) {
       },
       agendaItems: {
         orderBy: { order: "asc" },
-        include: {
-          assignment: { select: { id: true, title: true } },
-        },
       },
       meeting: {
         include: {

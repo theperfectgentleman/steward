@@ -17,9 +17,12 @@ let entranceAnimationPlayed = false;
 export function AuthGate({
   children,
   requireOrg = true,
+  immersive = false,
 }: {
   children: React.ReactNode;
   requireOrg?: boolean;
+  /** Skip AppShell chrome (Document Studio full-bleed). */
+  immersive?: boolean;
 }) {
   const { user, loading } = useApp();
   const [entranceDone, setEntranceDone] = useState(entranceAnimationPlayed);
@@ -66,5 +69,6 @@ export function AuthGate({
     return <OrgPickerLanding />;
   }
 
+  if (immersive) return <>{children}</>;
   return <AppShell>{children}</AppShell>;
 }
