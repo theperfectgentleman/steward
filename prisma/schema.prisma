@@ -36,43 +36,18 @@ enum TaskStatus {
   TODO
   IN_PROGRESS
   BLOCKED
+  IN_REVIEW
   DONE
 }
 
-enum ProjectStatus {
-  ACTIVE
-  ON_HOLD
-  COMPLETE
-}
-
-enum AssignmentSource {
-  SUPERVISORY
-  COMMITTEE_REFERRAL
-}
-
-enum AssignmentStatus {
-  DRAFT
-  ASSIGNED
-  ACCEPTED
-  IN_PROGRESS
-  IN_REVIEW
-  RETURNED
-  CHAIR_APPROVED
-  CLOSED
-  CANCELLED
-}
-
-enum AssignmentPriority {
-  LOW
-  NORMAL
-  HIGH
+enum TaskWorkClass {
+  DIRECTIVE
+  COMMITTEE
+  PERSONAL
 }
 
 enum EntityType {
-  ASSIGNMENT
-  PROJECT
   TASK
-  REPORT
   LIBRARY_DOCUMENT
   DOCUMENT
 }
@@ -86,7 +61,10 @@ enum SupervisoryTitle {
 
 enum ScheduleKind {
   MEETING
-  EVENT
+  WORKING_VISIT
+  WORKSHOP
+  PROGRAM
+  OTHER
 }
 
 enum ScheduleFormat {
@@ -117,11 +95,40 @@ enum RsvpStatus {
 enum DeliverableKind {
   NOTE
   LINK
+  FILE
 }
 
 enum DocumentSource {
   UPLOAD
   CREATED
+}
+
+enum DocumentMemberRole {
+  OWNER
+  EDITOR
+  REVIEWER
+  APPROVER
+}
+
+/// How a LibraryDocument relates to the linked entity (schema.org-style named link).
+enum DocumentLinkRelation {
+  ABOUT
+  EVIDENCE
+  PART_OF
+}
+
+enum LibraryDocumentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  RETURNED
+}
+
+enum NativeDocKind {
+  DOCUMENT
+  SPREADSHEET
+  PRESENTATION
 }
 
 enum LibraryDocumentTag {
@@ -130,6 +137,7 @@ enum LibraryDocumentTag {
   POLICY
   BRIEF
   FORM
+  TOR
   OTHER
 }
 
@@ -160,13 +168,6 @@ enum OtpPurpose {
   LOGIN_RESET
 }
 
-enum ReportStatus {
-  DRAFT
-  SUBMITTED
-  RETURNED
-  FINAL
-}
-
 enum InviteTargetType {
   COMMITTEE
   SUPERVISORY
@@ -188,7 +189,6 @@ model Organization {
   roleTemplates      RoleTemplate[]
   invites            Invite[]
   libraryDocuments   LibraryDocument[]
-  reports            Report[]
   messageThreads     MessageThread[]
   events             Event[]
 }
@@ -202,8 +202,10 @@ model OrganizationSettings {
   allowCrossCommitteeRead         Boolean @default(false)
   requireOversightOnSelfInitiated Boolean @default(true)
   allowSupervisoryAssignMembers   Boolean @default(true)
-  /// Ordered approval steps: [{ order, role, titleKey?, label }]
-  approvalStack                   Json    @default("[]")
+  /// Directive review ladder (default 4 steps)
+  directiveApprovalStack          Json    @default("[]")
+  /// Committee task review ladder (default 2 steps)
+  committeeApprovalStack          Json    @default("[]")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   updatedAt    DateTime     @updatedAt
@@ -266,8 +268,6 @@ model User {
   supervisoryMemberships  SupervisoryMember[]
   assignedTasks           Task[]                   @relation("AssignedTasks")
   createdTasks            Task[]                   @relation("CreatedTasks")
-  createdProjects         Project[]                @relation("CreatedProjects")
-  createdAssignments      Assignment[]             @relation("CreatedAssignments")
   rsvps                   EventRsvp[]
   attendances             Attendance[]
   createdMeetings         Meeting[]
@@ -276,16 +276,16 @@ model User {
   comments                Comment[]
   documents               Document[]
   libraryDocuments        LibraryDocument[]
+  documentMemberships     DocumentMember[]
+  documentLinksCreated    DocumentLink[]
   activityLogs            ActivityLog[]
   invitesCreated          Invite[]                 @relation("InvitesCreated")
   invitesReceived         Invite[]                 @relation("InvitesReceived")
   otpChallenges           OtpChallenge[]
-  authoredReports         Report[]                 @relation("ReportAuthor")
-  reviewedReports         Report[]                 @relation("ReportReviewer")
-  assignedAssignments     Assignment[]             @relation("AssignmentAssignee")
-  accountableAssignments  Assignment[]             @relation("AssignmentAccountable")
   messageParticipations   MessageParticipant[]
   messagesSent            Message[]                @relation("MessageSender")
+  createdDocumentVersions DocumentVersion[]
+  commentsResolved        Comment[]                @relation("CommentResolvedBy")
 }
 
 model SupervisoryGroup {
@@ -336,13 +336,10 @@ model Committee {
   members            CommitteeMember[]
   invites            Invite[]
   tasks              Task[]
-  projects           Project[]
   events             Event[]
   meetings           Meeting[]
   timelines          TimelineGoal[]
   feedback           CommitteeFeedback[]
-  targetAssignments  Assignment[]        @relation("TargetAssignments")
-  sourceAssignments  Assignment[]        @relation("SourceAssignments")
   libraryDocuments   LibraryDocument[]
   messageThreads     MessageThread[]
 
@@ -406,134 +403,65 @@ model OtpChallenge {
   @@index([userId, purpose, createdAt])
 }
 
-model Project {
-  id           String        @id @default(cuid())
-  title        String
-  description  String?
-  status       ProjectStatus @default(ACTIVE)
-  committeeId  String
-  assignmentId String?
-  createdById  String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  committee  Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
-  createdBy  User        @relation("CreatedProjects", fields: [createdById], references: [id])
-  tasks      Task[]
-  reports    Report[]
-
-  @@index([assignmentId])
-}
-
-model Report {
-  id             String       @id @default(cuid())
-  organizationId String
-  projectId      String
-  title          String
-  body           String?
-  status         ReportStatus @default(DRAFT)
-  authorId       String
-  reviewedById   String?
-  reviewComment  String?
-  submittedAt    DateTime?
-  finalizedAt    DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  author       User         @relation("ReportAuthor", fields: [authorId], references: [id])
-  reviewedBy   User?        @relation("ReportReviewer", fields: [reviewedById], references: [id])
-
-  @@index([organizationId, status])
-  @@index([projectId, status])
-}
-
-model Assignment {
-  id                 String             @id @default(cuid())
-  title              String
-  description        String?
-  source             AssignmentSource
-  status             AssignmentStatus   @default(DRAFT)
-  priority           AssignmentPriority @default(NORMAL)
-  createdById        String
-  targetCommitteeId  String?
-  assigneeUserId     String?
-  accountableOwnerId String?
-  sourceCommitteeId  String?
-  parentAssignmentId String?
-  rootTaskId         String?            @unique
-  dueDate            DateTime?
-  returnComment      String?
-  approvalStepIndex  Int                @default(0)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-
-  createdBy         User         @relation("CreatedAssignments", fields: [createdById], references: [id])
-  targetCommittee   Committee?   @relation("TargetAssignments", fields: [targetCommitteeId], references: [id], onDelete: Cascade)
-  assignee          User?        @relation("AssignmentAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
-  accountableOwner  User?        @relation("AssignmentAccountable", fields: [accountableOwnerId], references: [id], onDelete: SetNull)
-  sourceCommittee   Committee?   @relation("SourceAssignments", fields: [sourceCommitteeId], references: [id], onDelete: SetNull)
-  parentAssignment  Assignment?  @relation("ReferralChain", fields: [parentAssignmentId], references: [id], onDelete: SetNull)
-  childAssignments  Assignment[] @relation("ReferralChain")
-  rootTask          Task?        @relation("AssignmentRootTask", fields: [rootTaskId], references: [id], onDelete: SetNull)
-  projects          Project[]
-  agendaItems       AgendaItem[]
-
-  @@index([targetCommitteeId, status])
-  @@index([assigneeUserId, status])
-  @@index([accountableOwnerId, status])
-  @@index([createdById, status])
-  @@index([status, dueDate])
-}
-
 model Task {
-  id             String     @id @default(cuid())
-  title          String
-  description    String?
-  status         TaskStatus @default(TODO)
-  dueDate        DateTime?
-  estimatedDays  Float?
-  committeeId    String
-  projectId      String?
-  eventId        String?
-  parentId       String?
-  dependsOnTaskId String?
-  assignedToId   String?
-  createdById    String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  id                String        @id @default(cuid())
+  title             String
+  description       String?
+  status            TaskStatus    @default(TODO)
+  workClass         TaskWorkClass @default(COMMITTEE)
+  approvalStepIndex Int           @default(0)
+  returnComment     String?
+  dueDate           DateTime?
+  estimatedDays     Float?
+  committeeId       String
+  eventId           String?
+  parentId          String?
+  dependsOnTaskId   String?
+  assignedToId      String?
+  createdById       String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  committee        Committee   @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  project          Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  event            Event?      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  parent           Task?       @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
-  subtasks         Task[]      @relation("TaskSubtasks")
-  dependsOn        Task?       @relation("TaskDependencies", fields: [dependsOnTaskId], references: [id], onDelete: SetNull)
-  dependents       Task[]      @relation("TaskDependencies")
-  assignedTo       User?       @relation("AssignedTasks", fields: [assignedToId], references: [id])
-  createdBy        User?       @relation("CreatedTasks", fields: [createdById], references: [id])
-  assignmentAsRoot Assignment? @relation("AssignmentRootTask")
+  committee  Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  event      Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  parent     Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks   Task[]    @relation("TaskSubtasks")
+  dependsOn  Task?     @relation("TaskDependencies", fields: [dependsOnTaskId], references: [id], onDelete: SetNull)
+  dependents Task[]    @relation("TaskDependencies")
+  assignedTo User?     @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy  User?     @relation("CreatedTasks", fields: [createdById], references: [id])
 
   @@index([eventId])
   @@index([parentId])
-  @@index([projectId])
   @@index([dependsOnTaskId])
   @@index([committeeId, assignedToId, status])
+  @@index([workClass, status])
 }
 
 model Comment {
-  id         String     @id @default(cuid())
-  body       String
-  authorId   String
-  entityType EntityType
-  entityId   String
-  createdAt  DateTime   @default(now())
+  id           String     @id @default(cuid())
+  body         String
+  authorId     String
+  entityType   EntityType
+  entityId     String
+  /// Groups anchored document comment replies; root comment sets threadId = id
+  threadId     String?
+  parentId     String?
+  /// TipTap mark attribute linking highlight ↔ thread
+  anchorMarkId String?
+  anchorText   String?
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime   @default(now())
 
-  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author     User  @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("CommentResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  parent     Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[] @relation("CommentReplies")
 
   @@index([entityType, entityId, createdAt])
+  @@index([threadId, createdAt])
+  @@index([anchorMarkId])
 }
 
 model Document {
@@ -552,27 +480,84 @@ model Document {
 }
 
 model LibraryDocument {
-  id             String             @id @default(cuid())
+  id             String                 @id @default(cuid())
   organizationId String?
   title          String
-  tag            LibraryDocumentTag @default(OTHER)
-  source         DocumentSource     @default(CREATED)
+  tag            LibraryDocumentTag     @default(OTHER)
+  source         DocumentSource         @default(CREATED)
+  kind           NativeDocKind          @default(DOCUMENT)
+  status         LibraryDocumentStatus  @default(DRAFT)
   body           String?
+  contentJson    Json?
+  crdtState      Bytes?
   fileName       String?
   fileUrl        String?
+  storageKey     String?
   mimeType       String?
   committeeId    String?
   uploadedById   String
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  archivedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  committee    Committee?    @relation(fields: [committeeId], references: [id], onDelete: SetNull)
-  uploadedBy   User          @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  organization Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  committee    Committee?        @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+  uploadedBy   User              @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  versions     DocumentVersion[]
+  members      DocumentMember[]
+  links        DocumentLink[]
 
   @@index([organizationId, tag, createdAt])
   @@index([committeeId, tag, createdAt])
   @@index([tag, createdAt])
+  @@index([organizationId, kind, createdAt])
+  @@index([organizationId, status, createdAt])
+}
+
+model DocumentMember {
+  id         String              @id @default(cuid())
+  documentId String
+  userId     String
+  role       DocumentMemberRole
+  createdAt  DateTime            @default(now())
+
+  document LibraryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([userId])
+  @@index([documentId, role])
+}
+
+model DocumentLink {
+  id          String               @id @default(cuid())
+  documentId  String
+  entityType  EntityType
+  entityId    String
+  /// ABOUT = subject of doc; EVIDENCE = supports a Task; PART_OF = nested under another work item
+  relation    DocumentLinkRelation @default(ABOUT)
+  createdById String
+  createdAt   DateTime             @default(now())
+
+  document  LibraryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@index([relation])
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  contentJson Json
+  createdById String
+  createdAt   DateTime @default(now())
+
+  document  LibraryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
 }
 
 model ActivityLog {
@@ -594,7 +579,7 @@ model Event {
   id             String         @id @default(cuid())
   title          String
   description    String?
-  kind           ScheduleKind   @default(EVENT)
+  kind           ScheduleKind   @default(OTHER)
   format         ScheduleFormat @default(IN_PERSON)
   location       String?
   joinUrl        String?
@@ -619,20 +604,16 @@ model Event {
 }
 
 model AgendaItem {
-  id           String   @id @default(cuid())
-  eventId      String
-  title        String
-  order        Int      @default(0)
-  assignmentId String?
-  reportId     String?
-  notes        String?
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  eventId   String
+  title     String
+  order     Int      @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
 
-  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([eventId, order])
-  @@index([assignmentId])
 }
 
 model EventDeliverable {
@@ -641,6 +622,9 @@ model EventDeliverable {
   title       String
   kind        DeliverableKind
   content     String
+  storageKey  String?
+  fileName    String?
+  mimeType    String?
   createdById String
   createdAt   DateTime        @default(now())
 
