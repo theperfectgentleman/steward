@@ -69,6 +69,16 @@ export async function POST(request: Request) {
     }
 
     if (committeeId) {
+      const committee = await prisma.committee.findFirst({
+        where: { id: committeeId, organizationId: auth.org.organizationId },
+        select: { id: true },
+      });
+      if (!committee) {
+        return NextResponse.json(
+          { error: "committee.organizationId must match organizationId" },
+          { status: 400 },
+        );
+      }
       const access = assertCommitteeAccess(auth.user, committeeId);
       if (access) return access;
     }

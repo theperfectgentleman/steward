@@ -36,10 +36,7 @@ async function loadContext(
     const event = await prisma.event.findFirst({
       where: {
         id: body.eventId,
-        OR: [
-          { organizationId: orgId },
-          { committee: { organizationId: orgId } },
-        ],
+        organizationId: orgId,
       },
     });
     if (event) {

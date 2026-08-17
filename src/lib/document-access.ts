@@ -141,7 +141,7 @@ export function assertDocumentStatusTransition(
 
 type DocAccessRow = {
   id: string;
-  organizationId: string | null;
+  organizationId: string;
   committeeId: string | null;
   uploadedById: string;
   archivedAt?: Date | null;
@@ -152,7 +152,7 @@ export async function loadDocumentForOrg(documentId: string, organizationId: str
   return prisma.libraryDocument.findFirst({
     where: {
       id: documentId,
-      OR: [{ organizationId }, { organizationId: null }],
+      organizationId,
       archivedAt: null,
     },
     include: {

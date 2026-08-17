@@ -506,7 +506,7 @@ async function ensureDemoContent(params: {
       where: { committeeId: spec.committeeId, title: spec.title },
     });
     if (!existing) {
-      existing = await prisma.task.create({ data: spec as never });
+      existing = await prisma.task.create({ data: { ...spec, organizationId } as never });
     } else if (spec.title === "Sanctuary Seating Upgrade") {
       existing = await prisma.task.update({
         where: { id: existing.id },
@@ -538,6 +538,7 @@ async function ensureDemoContent(params: {
           description: "Committee work under the seating directive",
           status: "IN_PROGRESS",
           workClass: "COMMITTEE",
+          organizationId,
           committeeId: estates.id,
           parentId: directive.id,
           assignedToId: secretaryId,
@@ -558,6 +559,7 @@ async function ensureDemoContent(params: {
           description: "Optional personal step — does not block review",
           status: "TODO",
           workClass: "PERSONAL",
+          organizationId,
           committeeId: estates.id,
           parentId: committeeChild.id,
           assignedToId: memberId,
@@ -673,7 +675,7 @@ async function ensureDemoContent(params: {
       where: { committeeId: spec.committeeId, title: spec.title },
     });
     if (!existing) {
-      existing = await prisma.event.create({ data: spec });
+      existing = await prisma.event.create({ data: { ...spec, organizationId } });
     } else {
       existing = await prisma.event.update({
         where: { id: existing.id },

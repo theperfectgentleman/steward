@@ -3,22 +3,24 @@ import {
   assertCommitteeAccess,
   assertCommitteeMutation,
   asPermissionUser,
-  requireUser,
+  requireActiveOrg,
 } from "@/lib/auth";
 import { enrichEventsWithProgress } from "@/lib/event-queries";
 import { prisma } from "@/lib/prisma";
 import { canEditTasks, canViewAllCommittees } from "@/lib/types";
 import type { ScheduleFormat, ScheduleKind } from "@/lib/types";
 import { EVENT_KINDS } from "@/lib/event-kinds";
+import { assertCommitteeMatchesOrg } from "@/lib/work-context";
 
 const KINDS: ScheduleKind[] = EVENT_KINDS;
 const FORMATS: ScheduleFormat[] = ["IN_PERSON", "VIRTUAL", "HYBRID"];
 
 export async function GET(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
+  const orgId = auth.org.organizationId;
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const global = searchParams.get("global") === "true";
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
   } else if (mineScope) {
-    // user's committees (or all if canViewAll)
+    // user's committees (or all if canViewAll) plus org-wide events
   } else if (committeeId) {
     const access = assertCommitteeAccess(auth.user, committeeId);
     if (access) return access;
@@ -46,13 +48,21 @@ export async function GET(request: Request) {
       : undefined;
 
   const events = await prisma.event.findMany({
-    where: global
-      ? undefined
-      : mineScope
-        ? committeeIds
-          ? { committeeId: { in: committeeIds } }
-          : undefined
-        : { committeeId: committeeId! },
+    where: {
+      organizationId: orgId,
+      ...(global
+        ? {}
+        : mineScope
+          ? committeeIds
+            ? {
+                OR: [
+                  { committeeId: { in: committeeIds } },
+                  { committeeId: null },
+                ],
+              }
+            : {}
+          : { committeeId: committeeId! }),
+    },
     include: {
       committee: { select: { id: true, name: true, charterLetter: true } },
       rsvps: {
@@ -68,15 +78,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
+  const orgId = auth.org.organizationId;
   const body = (await request.json()) as {
     title?: string;
     description?: string;
     startDate?: string;
     endDate?: string | null;
-    committeeId?: string;
+    committeeId?: string | null;
+    organizationId?: string | null;
     kind?: ScheduleKind;
     format?: ScheduleFormat;
     location?: string | null;
@@ -84,8 +96,32 @@ export async function POST(request: Request) {
     agenda?: string | null;
   };
 
-  if (!body.title || !body.startDate || !body.committeeId) {
+  if (!body.title || !body.startDate) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  if (body.organizationId != null && body.organizationId !== orgId) {
+    return NextResponse.json(
+      { error: "organizationId must match the active organization" },
+      { status: 400 },
+    );
+  }
+
+  const committeeId = body.committeeId || null;
+  const matchErr = await assertCommitteeMatchesOrg(committeeId, orgId);
+  if (matchErr) return matchErr;
+
+  const perm = asPermissionUser(auth.user);
+  if (committeeId) {
+    const mutation = assertCommitteeMutation(auth.user, committeeId);
+    if (mutation) return mutation;
+    if (!canEditTasks(perm, committeeId)) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    }
+    const access = assertCommitteeAccess(auth.user, committeeId);
+    if (access) return access;
+  } else if (!canViewAllCommittees(perm)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const kind: ScheduleKind =
@@ -93,18 +129,6 @@ export async function POST(request: Request) {
   const format: ScheduleFormat =
     body.format && FORMATS.includes(body.format) ? body.format : "IN_PERSON";
 
-  const mutation = assertCommitteeMutation(auth.user, body.committeeId);
-  if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, body.committeeId)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, body.committeeId);
-  if (access) return access;
-
-  const organizationId = auth.user.orgContext?.organizationId ?? null;
   const startDate = new Date(body.startDate);
 
   const event = await prisma.$transaction(async (tx) => {
@@ -114,8 +138,8 @@ export async function POST(request: Request) {
         description: body.description,
         startDate,
         endDate: body.endDate ? new Date(body.endDate) : null,
-        committeeId: body.committeeId!,
-        organizationId,
+        committeeId,
+        organizationId: orgId,
         kind,
         format,
         location: body.location?.trim() || null,
@@ -131,16 +155,18 @@ export async function POST(request: Request) {
     });
 
     if (kind === "MEETING") {
-      const roster = await tx.committeeMember.findMany({
-        where: { committeeId: body.committeeId! },
-        select: { userId: true },
-      });
+      const roster = committeeId
+        ? await tx.committeeMember.findMany({
+            where: { committeeId },
+            select: { userId: true },
+          })
+        : [];
 
       await tx.meeting.create({
         data: {
           title: body.title!,
           date: startDate,
-          committeeId: body.committeeId!,
+          committeeId,
           eventId: created.id,
           createdById: auth.user.id,
           attendances: {

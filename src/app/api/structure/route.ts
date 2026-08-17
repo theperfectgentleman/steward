@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { transferOrgAdmin } from "@/lib/organizations";
+import { assertCommitteeDeletable } from "@/lib/work-context";
 
 export async function GET() {
   const auth = await requireActiveOrg();
@@ -116,6 +117,15 @@ export async function POST(request: Request) {
       if (!body.committeeId) {
         return NextResponse.json({ error: "committeeId required" }, { status: 400 });
       }
+      const existing = await prisma.committee.findFirst({
+        where: { id: body.committeeId, organizationId: orgId },
+        select: { id: true },
+      });
+      if (!existing) {
+        return NextResponse.json({ error: "Committee not found" }, { status: 404 });
+      }
+      const blocked = await assertCommitteeDeletable(body.committeeId);
+      if (blocked) return blocked;
       await prisma.committee.deleteMany({
         where: { id: body.committeeId, organizationId: orgId },
       });

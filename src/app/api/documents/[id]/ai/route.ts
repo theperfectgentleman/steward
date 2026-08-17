@@ -41,7 +41,7 @@ export async function POST(
   const doc = await prisma.libraryDocument.findFirst({
     where: {
       id,
-      OR: [{ organizationId: auth.org.organizationId }, { organizationId: null }],
+      organizationId: auth.org.organizationId,
     },
     include: {
       committee: { select: { organizationId: true } },

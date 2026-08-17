@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
-import { asPermissionUser, requireUser } from "@/lib/auth";
+import { asPermissionUser, requireActiveOrg } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewAllCommittees } from "@/lib/types";
 import { tasksPath } from "@/lib/navigation";
 
 export async function GET(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { searchParams } = new URL(request.url);
@@ -18,35 +18,39 @@ export async function GET(request: Request) {
   const perm = asPermissionUser(auth.user);
   const committeeIds = auth.user.committeeMemberships.map((m) => m.committeeId);
   const global = canViewAllCommittees(perm);
-  const orgId = auth.user.orgContext?.organizationId;
+  const orgId = auth.org.organizationId;
 
   const docWhere: Prisma.LibraryDocumentWhereInput = {
     archivedAt: null,
+    organizationId: orgId,
     title: { contains: q, mode: "insensitive" },
-    AND: [
-      {
-        OR: orgId
-          ? [{ organizationId: orgId }, { organizationId: null }]
-          : [{ organizationId: null }],
-      },
-    ],
   };
 
   if (!global) {
-    (docWhere.AND as Prisma.LibraryDocumentWhereInput[]).push({
-      OR: [
-        { committeeId: { in: committeeIds } },
-        { committeeId: null },
-        { members: { some: { userId: auth.user.id } } },
-      ],
-    });
+    docWhere.AND = [
+      {
+        OR: [
+          { committeeId: { in: committeeIds } },
+          { committeeId: null },
+          { members: { some: { userId: auth.user.id } } },
+        ],
+      },
+    ];
   }
 
   const [tasks, users, documents] = await Promise.all([
     prisma.task.findMany({
       where: {
+        organizationId: orgId,
         title: { contains: q, mode: "insensitive" },
-        ...(global ? {} : { committeeId: { in: committeeIds } }),
+        ...(global
+          ? {}
+          : {
+              OR: [
+                { committeeId: { in: committeeIds } },
+                { committeeId: null, workClass: "PERSONAL" },
+              ],
+            }),
       },
       select: {
         id: true,

@@ -29,7 +29,7 @@ export async function POST(
   const doc = await prisma.libraryDocument.findFirst({
     where: {
       id,
-      OR: [{ organizationId: auth.org.organizationId }, { organizationId: null }],
+      organizationId: auth.org.organizationId,
       archivedAt: null,
     },
     include: {

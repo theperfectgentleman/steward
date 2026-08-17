@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
+import { requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgMutation, requireEventCommitteeId } from "@/lib/event-access";
 import { generateTaskDrafts } from "@/lib/ai/groq";
 import { EVENT_KIND_LABELS, getEventKindProfile } from "@/lib/event-kinds";
-import { requireEventCommitteeId } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
-import { canEditTasks, type ScheduleKind } from "@/lib/types";
+import { type ScheduleKind } from "@/lib/types";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id } = await params;
-  const event = await prisma.event.findUnique({
-    where: { id },
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id, organizationId: orgId },
     include: { agendaItems: { orderBy: { order: "asc" }, select: { title: true } } },
   });
   if (!event) {
@@ -30,16 +26,8 @@ export async function POST(
   const missing = requireEventCommitteeId(event.committeeId);
   if (missing) return missing;
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId!)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
-  if (access) return access;
 
   const profile = getEventKindProfile(event.kind);
   if (!profile.tasks) {

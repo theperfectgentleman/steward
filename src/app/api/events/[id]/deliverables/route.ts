@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
-import { requireEventCommitteeId } from "@/lib/event-access";
+import { requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgAccess, assertEventOrgMutation } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
 import {
   buildR2Key,
@@ -14,7 +9,6 @@ import {
   putR2Object,
   sanitizeStorageFileName,
 } from "@/lib/r2";
-import { canEditTasks } from "@/lib/types";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 
@@ -22,19 +16,19 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const missing = requireEventCommitteeId(event.committeeId);
-  if (missing) return missing;
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const deliverables = await prisma.eventDeliverable.findMany({
@@ -50,28 +44,20 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const missing = requireEventCommitteeId(event.committeeId);
-  if (missing) return missing;
-
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId!)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
-  if (access) return access;
 
   const contentType = request.headers.get("content-type") || "";
   if (contentType.includes("multipart/form-data")) {
@@ -114,12 +100,6 @@ export async function POST(
       },
       include: { createdBy: { select: { id: true, name: true } } },
     });
-
-    const committee = await prisma.committee.findUnique({
-      where: { id: event.committeeId! },
-      select: { organizationId: true },
-    });
-    const orgId = committee?.organizationId ?? "unknown";
 
     const storageKey = buildR2Key(
       "orgs",
@@ -182,28 +162,20 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const missing = requireEventCommitteeId(event.committeeId);
-  if (missing) return missing;
-
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId!)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
-  if (access) return access;
 
   const { searchParams } = new URL(request.url);
   const deliverableId = searchParams.get("deliverableId");

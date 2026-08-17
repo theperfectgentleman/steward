@@ -26,7 +26,7 @@ export async function ensureMeetingForEvent(eventId: string): Promise<MeetingPay
       committee: { select: { id: true, name: true, organizationId: true } },
     },
   });
-  if (!event || event.kind !== "MEETING" || !event.committeeId) return null;
+  if (!event || event.kind !== "MEETING") return null;
 
   let meeting = await prisma.meeting.findUnique({
     where: { eventId },
@@ -34,17 +34,19 @@ export async function ensureMeetingForEvent(eventId: string): Promise<MeetingPay
   });
 
   if (!meeting) {
-    const roster = await prisma.committeeMember.findMany({
-      where: { committeeId: event.committeeId },
-      select: { userId: true },
-    });
+    const roster = event.committeeId
+      ? await prisma.committeeMember.findMany({
+          where: { committeeId: event.committeeId },
+          select: { userId: true },
+        })
+      : [];
     const creatorId =
       roster.find((m) => m.userId)?.userId ??
       (
         await prisma.user.findFirst({
           where: {
             organizationMemberships: {
-              some: { organizationId: event.committee?.organizationId ?? "" },
+              some: { organizationId: event.organizationId },
             },
           },
           select: { id: true },

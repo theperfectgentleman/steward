@@ -1,9 +1,12 @@
 import { computeEventProgress } from "@/lib/event-progress";
 import { prisma } from "@/lib/prisma";
 
-export async function getEventWithProgress(eventId: string) {
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
+export async function getEventWithProgress(eventId: string, organizationId?: string) {
+  const event = await prisma.event.findFirst({
+    where: {
+      id: eventId,
+      ...(organizationId ? { organizationId } : {}),
+    },
     include: {
       committee: { select: { name: true, charterLetter: true } },
       rsvps: {
