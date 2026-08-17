@@ -190,3 +190,25 @@ export function capsFromTemplates(
   }
   return parseRoleCapabilities(match.capabilities);
 }
+
+export function isGovernanceLeadSeat(seat: {
+  isHead?: boolean;
+  title?: string | null;
+} | null | undefined): boolean {
+  if (!seat) return false;
+  return seat.isHead === true || seat.title === "HEAD" || seat.title === "SECRETARY";
+}
+
+/** GO / GS always see every group and can assign, even if template JSON is empty. */
+export function applyGovernanceLeadCaps(
+  seat: { isHead?: boolean; title?: string | null } | null | undefined,
+  caps: RoleCapabilities,
+): RoleCapabilities {
+  if (!isGovernanceLeadSeat(seat)) return caps;
+  return {
+    ...caps,
+    canViewAll: true,
+    canCreateDirective: true,
+    canApproveOptional: true,
+  };
+}

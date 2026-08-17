@@ -9,6 +9,7 @@ import {
   type UserRole,
 } from "@/lib/types";
 import {
+  applyGovernanceLeadCaps,
   capsFromTemplates,
   committeeTitleTemplateKey,
   supervisoryTitleTemplateKey,
@@ -48,10 +49,13 @@ function toPermissionUser(user: SessionUser): PermissionUser {
     );
   }
   const supervisoryCapabilities = supervisory
-    ? capsFromTemplates(
-        templates,
-        supervisory.roleTemplateKey ??
-          supervisoryTitleTemplateKey(supervisory.title, supervisory.isHead),
+    ? applyGovernanceLeadCaps(
+        supervisory,
+        capsFromTemplates(
+          templates,
+          supervisory.roleTemplateKey ??
+            supervisoryTitleTemplateKey(supervisory.title, supervisory.isHead),
+        ),
       )
     : null;
   return {
@@ -69,11 +73,11 @@ function toPermissionUser(user: SessionUser): PermissionUser {
           title: supervisory.title,
           customTitle: supervisory.customTitle,
           canViewAll:
-            supervisoryCapabilities.canViewAll ||
-            supervisory.canViewAll === true,
+            applyGovernanceLeadCaps(supervisory, supervisoryCapabilities)
+              .canViewAll || supervisory.canViewAll === true,
           canApproveOptional:
-            supervisoryCapabilities.canApproveOptional ||
-            supervisory.canApproveOptional === true,
+            applyGovernanceLeadCaps(supervisory, supervisoryCapabilities)
+              .canApproveOptional || supervisory.canApproveOptional === true,
         }
       : null,
     committeeCapabilities,

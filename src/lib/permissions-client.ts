@@ -7,6 +7,10 @@ import type {
   UserRole,
   CommitteeTitle,
 } from "@/lib/types";
+import {
+  applyGovernanceLeadCaps,
+  EMPTY_ROLE_CAPABILITIES,
+} from "@/lib/role-capabilities";
 
 function normalizeSupervisory(
   s: {
@@ -63,14 +67,26 @@ export function toPermissionUser(user: {
   const supervisory = normalizeSupervisory(
     user.supervisoryMembership ?? user.presbyteryMembership,
   );
+  const supervisoryCapabilities = applyGovernanceLeadCaps(
+    supervisory,
+    user.supervisoryCapabilities ?? EMPTY_ROLE_CAPABILITIES,
+  );
   return {
     id: user.id,
     role: user.role,
     orgRole: user.organization?.orgRole ?? null,
     committeeMemberships: user.committeeMemberships,
-    supervisoryMembership: supervisory,
+    supervisoryMembership: supervisory
+      ? {
+          ...supervisory,
+          canViewAll: supervisoryCapabilities.canViewAll || supervisory.canViewAll === true,
+          canApproveOptional:
+            supervisoryCapabilities.canApproveOptional ||
+            supervisory.canApproveOptional === true,
+        }
+      : null,
     committeeCapabilities: user.committeeCapabilities,
-    supervisoryCapabilities: user.supervisoryCapabilities ?? null,
+    supervisoryCapabilities: supervisory ? supervisoryCapabilities : null,
     orgSettings: user.organization?.settings
       ? {
           allowCrossCommitteeRead:

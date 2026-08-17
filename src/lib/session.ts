@@ -5,8 +5,10 @@ import {
 } from "@/lib/auth";
 import type { OrganizationMemberRole, RoleCapabilities } from "@/lib/types";
 import {
+  applyGovernanceLeadCaps,
   capsFromTemplates,
   committeeTitleTemplateKey,
+  isGovernanceLeadSeat,
   supervisoryTitleTemplateKey,
 } from "@/lib/role-capabilities";
 
@@ -106,7 +108,10 @@ export function toSessionPayload(user: UserWithRelations) {
           )
         : "SUPERVISORY_MEMBER";
   const supervisoryCapabilities = supervisory
-    ? capsFromTemplates(templates, supervisoryTemplateKey)
+    ? applyGovernanceLeadCaps(
+        supervisory,
+        capsFromTemplates(templates, supervisoryTemplateKey),
+      )
     : null;
 
   const memberships: MembershipSummary[] = (user.organizationMemberships ?? []).map(
@@ -156,9 +161,11 @@ export function toSessionPayload(user: UserWithRelations) {
           title: (supervisory.title as "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM") ?? (supervisory.isHead ? "HEAD" : "MEMBER"),
           customTitle: supervisory.customTitle ?? null,
           canViewAll:
+            isGovernanceLeadSeat(supervisory) ||
             supervisoryCapabilities.canViewAll ||
             supervisory.canViewAll === true,
           canApproveOptional:
+            isGovernanceLeadSeat(supervisory) ||
             supervisoryCapabilities.canApproveOptional ||
             supervisory.canApproveOptional === true,
         }
