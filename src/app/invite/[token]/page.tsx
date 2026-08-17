@@ -7,7 +7,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { TouchButton } from "@/components/TouchButton";
 import { useApp } from "@/providers/AppProvider";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
-import { tasksPath } from "@/lib/navigation";
+import { homePath } from "@/lib/navigation";
 
 type InviteData = {
   token: string;
@@ -17,7 +17,9 @@ type InviteData = {
   phone: string | null;
   emailRaw: string;
   phoneRaw: string | null;
-  committee: { id: string; name: string };
+  organizationId: string;
+  organizationName: string;
+  committee: { id: string; name: string } | null;
 };
 
 type Step = "loading" | "error" | "confirm" | "channel" | "otp" | "password" | "done";
@@ -29,7 +31,7 @@ export default function InvitePage({
 }) {
   const { token } = use(params);
   const router = useRouter();
-  const { user, loading: authLoading, establishSession } = useApp();
+  const { user, loading: authLoading, establishSession, enterOrganization } = useApp();
 
   const [step, setStep] = useState<Step>("loading");
   const [invite, setInvite] = useState<InviteData | null>(null);
@@ -147,9 +149,15 @@ export default function InvitePage({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not set password");
-      establishSession(data);
       setStep("done");
-      router.replace(tasksPath(invite.committee.id));
+      if (invite.committee?.id) {
+        localStorage.setItem("unitycommit-committee", invite.committee.id);
+      }
+      establishSession(data);
+      if (invite.organizationId) {
+        await enterOrganization(invite.organizationId);
+      }
+      router.replace(homePath(invite.committee?.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not set password");
     } finally {
@@ -181,7 +189,8 @@ export default function InvitePage({
           <h1 className="text-2xl font-bold text-charcoal">Join Steward</h1>
           {invite && (
             <p className="text-muted text-sm">
-              You&apos;ve been invited to {invite.committee.name}
+              You&apos;ve been invited to{" "}
+              {invite.committee?.name ?? invite.organizationName}
             </p>
           )}
         </div>
@@ -194,7 +203,8 @@ export default function InvitePage({
           {step === "confirm" && invite && (
             <>
               <p className="text-sm font-semibold text-charcoal">
-                Hi {invite.name}, are these details correct?
+                Hi {invite.name}, confirm your email and phone to create your
+                account.
               </p>
               <label className="block text-xs font-bold text-muted uppercase">Email</label>
               <input

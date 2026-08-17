@@ -11,6 +11,7 @@ import { canEditTasks, canViewAllCommittees } from "@/lib/types";
 import type { ScheduleFormat, ScheduleKind } from "@/lib/types";
 import { EVENT_KINDS } from "@/lib/event-kinds";
 import { assertCommitteeMatchesOrg } from "@/lib/work-context.server";
+import { logActivity } from "@/lib/activity";
 
 const KINDS: ScheduleKind[] = EVENT_KINDS;
 const FORMATS: ScheduleFormat[] = ["IN_PERSON", "VIRTUAL", "HYBRID"];
@@ -190,6 +191,15 @@ export async function POST(request: Request) {
     }
 
     return created;
+  });
+
+  await logActivity({
+    entityType: "EVENT",
+    entityId: event.id,
+    action: "EVENT_CREATED",
+    actorId: auth.user.id,
+    organizationId: orgId,
+    metadata: { kind, committeeId },
   });
 
   return NextResponse.json(event, { status: 201 });

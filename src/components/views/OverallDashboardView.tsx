@@ -22,6 +22,7 @@ import {
   documentsPath,
   eventsPath,
   tasksPath,
+  isAllGroups,
 } from "@/lib/navigation";
 
 type CommitteeStat = {
@@ -41,7 +42,7 @@ type CommitteeStat = {
 
 export function OverallDashboardView() {
   const router = useRouter();
-  const { user } = useApp();
+  const { user, activeCommitteeId } = useApp();
   const [stats, setStats] = useState<CommitteeStat[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState(0);
@@ -122,11 +123,16 @@ export function OverallDashboardView() {
     }
   };
 
+  const assignCommitteeId =
+    activeCommitteeId && !isAllGroups(activeCommitteeId)
+      ? activeCommitteeId
+      : (stats[0]?.id ?? null);
+
   const quickActions = [
     canAssign
       ? {
           key: "assign",
-          href: tasksAssignPath(),
+          href: tasksAssignPath(assignCommitteeId),
           label: "Assign directive",
           icon: ClipboardCheck,
         }

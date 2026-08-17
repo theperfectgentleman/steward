@@ -22,6 +22,7 @@ import {
   assertTaskRefsInOrg,
   requireCommitteeForWorkClass,
 } from "@/lib/work-context.server";
+import { logActivity } from "@/lib/activity";
 
 export async function GET(request: Request) {
   const auth = await requireActiveOrg();
@@ -75,6 +76,14 @@ export async function GET(request: Request) {
   }
 
   const orgWhere = { organizationId: orgId };
+  const assignedToMeWhere = assignedToMe
+    ? {
+        OR: [
+          { assignedToId: auth.user.id },
+          { createdById: auth.user.id, assignedToId: null },
+        ],
+      }
+    : {};
 
   if (global) {
     if (!canViewAllCommittees(perm)) {
@@ -119,7 +128,7 @@ export async function GET(request: Request) {
             }
           : {}),
         ...(eventId ? { eventId } : {}),
-        ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
+        ...assignedToMeWhere,
         ...(waitingReview
           ? { status: "IN_REVIEW" }
           : statusFilter
@@ -144,7 +153,7 @@ export async function GET(request: Request) {
       ...orgWhere,
       committeeId,
       ...(eventId ? { eventId } : {}),
-      ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
+      ...assignedToMeWhere,
       parentId: null,
       ...(waitingReview
         ? { status: "IN_REVIEW" }
@@ -192,8 +201,12 @@ export async function POST(request: Request) {
   if (matchErr) return matchErr;
 
   if (committeeId) {
-    const mutation = assertCommitteeMutation(auth.user, committeeId);
-    if (mutation) return mutation;
+    const isDirectiveAssign =
+      workClass === "DIRECTIVE" && canCreateDirective(perm);
+    if (!isDirectiveAssign) {
+      const mutation = assertCommitteeMutation(auth.user, committeeId);
+      if (mutation) return mutation;
+    }
     const access = assertCommitteeAccess(auth.user, committeeId);
     if (access) return access;
   }
@@ -226,7 +239,7 @@ export async function POST(request: Request) {
     if (inferredErr) return inferredErr;
     body.eventId = body.eventId ?? parent.eventId ?? undefined;
   } else if (workClass === "DIRECTIVE") {
-    if (!canViewAllCommittees(perm) && !canCreateDirective(perm)) {
+    if (!canCreateDirective(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
   } else if (workClass !== "PERSONAL" && !isEditor) {
@@ -278,6 +291,15 @@ export async function POST(request: Request) {
         include: { assignedTo: { select: { id: true, name: true } } },
       },
     },
+  });
+
+  await logActivity({
+    entityType: "TASK",
+    entityId: task.id,
+    action: workClass === "DIRECTIVE" ? "DIRECTIVE_CREATED" : "TASK_CREATED",
+    actorId: auth.user.id,
+    organizationId: orgId,
+    metadata: { workClass, committeeId },
   });
 
   return NextResponse.json(task, { status: 201 });

@@ -5,6 +5,7 @@ import {
   requireUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
 
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRoles(["ORG_ADMIN", "ORG_TECH"]);
+  const auth = await requireRoles(["ORG_ADMIN"]);
   if (auth.error) return auth.error;
 
   const body = (await request.json()) as {
@@ -52,6 +53,16 @@ export async function POST(request: Request) {
 
   if (!body.userId || !body.committeeId || !body.title) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  const committee = await prisma.committee.findFirst({
+    where: {
+      id: body.committeeId,
+      organizationId: auth.user.orgContext!.organizationId,
+    },
+  });
+  if (!committee) {
+    return NextResponse.json({ error: "Committee not found" }, { status: 404 });
   }
 
   const membership = await prisma.committeeMember.upsert({
@@ -67,6 +78,15 @@ export async function POST(request: Request) {
       title: body.title,
     },
     update: { title: body.title },
+  });
+
+  await logActivity({
+    entityType: "STRUCTURE",
+    entityId: membership.id,
+    action: "COMMITTEE_MEMBER_ADDED",
+    actorId: auth.user.id,
+    organizationId: committee.organizationId,
+    metadata: { userId: body.userId, committeeId: body.committeeId, title: body.title },
   });
 
   return NextResponse.json(membership);

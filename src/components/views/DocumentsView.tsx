@@ -12,7 +12,7 @@ import { SearchableCommitteeSelect } from "@/components/SearchableCommitteeSelec
 import { PeoplePickerField } from "@/components/people/PeoplePickerField";
 import { useApp } from "@/providers/AppProvider";
 import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
-import { toPermissionUser } from "@/lib/permissions-client";
+import { committeeListScope, toPermissionUser } from "@/lib/permissions-client";
 import {
   DOCUMENT_SOURCE_LABELS,
   DOCUMENT_STATUS_LABELS,
@@ -159,10 +159,7 @@ export function DocumentsView({
 
   useEffect(() => {
     if (!user || scoped) return;
-    const scope =
-      user.role === "ORG_ADMIN" || user.role === "ORG_PARTICIPANT"
-        ? "all"
-        : user.id;
+    const scope = committeeListScope(user);
     fetch(`/api/committees?scope=${scope}`)
       .then((r) => r.json())
       .then((data: Committee[]) => setCommittees(data))

@@ -50,6 +50,9 @@ enum EntityType {
   TASK
   LIBRARY_DOCUMENT
   DOCUMENT
+  EVENT
+  INVITE
+  STRUCTURE
 }
 
 enum SupervisoryTitle {
@@ -172,6 +175,7 @@ enum InviteTargetType {
   COMMITTEE
   SUPERVISORY
   ORG_ADMIN
+  ORGANIZATION
 }
 
 model Organization {
@@ -256,6 +260,7 @@ model User {
   phone           String?
   passwordHash    String?
   status          UserStatus @default(PENDING)
+  mustChangePassword Boolean @default(false)
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
   /// Send batched attention/inbox digest emails when items need action
@@ -371,6 +376,7 @@ model Invite {
   userId         String
   targetType     InviteTargetType @default(COMMITTEE)
   committeeId    String?
+  orgRole        OrganizationMemberRole?
   title          CommitteeTitle   @default(MEMBER)
   customTitle    String?
   isSupervisoryHead Boolean       @default(false)
@@ -569,18 +575,20 @@ model DocumentVersion {
 }
 
 model ActivityLog {
-  id         String     @id @default(cuid())
-  entityType EntityType
-  entityId   String
-  action     String
-  actorId    String
-  metadata   Json?
-  createdAt  DateTime   @default(now())
+  id             String     @id @default(cuid())
+  entityType     EntityType
+  entityId       String
+  action         String
+  actorId        String
+  organizationId String?
+  metadata       Json?
+  createdAt      DateTime   @default(now())
 
   actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
 
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 model Event {

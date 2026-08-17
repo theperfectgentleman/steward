@@ -5,6 +5,8 @@ import { Eye, EyeOff } from "lucide-react";
 import { TouchButton } from "./TouchButton";
 import { BrandLogo } from "./BrandLogo";
 import { InstallAppPrompt } from "./InstallAppPrompt";
+import { OverflowDots } from "./OverflowDots";
+import { CreateAccountSheet } from "./CreateAccountSheet";
 import { useApp } from "@/providers/AppProvider";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
 
@@ -23,6 +25,7 @@ export function LoginPicker() {
   const [newPassword, setNewPassword] = useState("");
   const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [maskedDest, setMaskedDest] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password) return;
@@ -108,7 +111,17 @@ export function LoginPicker() {
   };
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-4 py-8 bg-surface">
+    <div className="relative min-h-dvh flex flex-col items-center justify-center px-4 py-8 bg-surface">
+      <div className="absolute right-3 top-3">
+        <OverflowDots
+          items={[
+            {
+              label: "Create account",
+              onClick: () => setCreateOpen(true),
+            },
+          ]}
+        />
+      </div>
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-3">
           <div className="flex justify-center">
@@ -281,6 +294,7 @@ export function LoginPicker() {
 
         <InstallAppPrompt className="mt-2" />
       </div>
+      <CreateAccountSheet open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }

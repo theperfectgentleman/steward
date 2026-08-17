@@ -7,7 +7,7 @@ import {
 } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
-import type { EntityType } from "@/lib/types";
+import { isOrgTech, type EntityType } from "@/lib/types";
 import {
   authorizeDocumentAccess,
   loadDocumentForOrg,
@@ -144,7 +144,7 @@ export async function POST(request: Request) {
 
   // Block ORG_TECH
   const perm = asPermissionUser(access.user);
-  if (perm.role === "ORG_TECH") {
+  if (isOrgTech(perm)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

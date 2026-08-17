@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
+  isPlaceholderEmail,
   isValidEmail,
   isValidPhone,
   normalizeEmail,
@@ -34,8 +35,8 @@ export async function POST(
   const email = body.email ? normalizeEmail(body.email) : invite.user.email;
   const phone = body.phone ? normalizePhone(body.phone) : invite.user.phone;
 
-  if (!isValidEmail(email)) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+  if (!isValidEmail(email) || isPlaceholderEmail(email)) {
+    return NextResponse.json({ error: "Enter a real email address" }, { status: 400 });
   }
   if (phone && !isValidPhone(phone)) {
     return NextResponse.json({ error: "Invalid phone" }, { status: 400 });

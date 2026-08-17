@@ -4,7 +4,7 @@ import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { requireActiveOrg, assertCommitteeAccess, asPermissionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canReadDocuments, canManageTor } from "@/lib/types";
+import { canReadDocuments, canManageTor, isOrgTech } from "@/lib/types";
 import type { LibraryDocumentTag } from "@/lib/documents";
 import {
   createDocumentMembers,
@@ -27,8 +27,8 @@ export async function POST(request: Request) {
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
-  if (perm.role === "ORG_TECH") {
-    return NextResponse.json({ error: "System admins cannot manage documents" }, { status: 403 });
+  if (isOrgTech(perm)) {
+    return NextResponse.json({ error: "Org Tech cannot manage documents" }, { status: 403 });
   }
 
   try {

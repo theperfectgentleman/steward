@@ -6,7 +6,11 @@ import {
   type SessionUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canViewAllCommittees, type TaskWorkClass } from "@/lib/types";
+import {
+  canCreateDirective,
+  canViewAllCommittees,
+  type TaskWorkClass,
+} from "@/lib/types";
 
 export function requireCommitteeForWorkClass(
   workClass: TaskWorkClass,
@@ -117,13 +121,21 @@ export function assertTaskOrgAccess(
 
 export function assertTaskOrgMutation(
   user: SessionUser,
-  task: { organizationId: string; committeeId: string | null },
+  task: {
+    organizationId: string;
+    committeeId: string | null;
+    workClass?: string | null;
+  },
   organizationId: string,
 ): NextResponse | null {
   if (task.organizationId !== organizationId) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
   if (task.committeeId) {
+    const perm = asPermissionUser(user);
+    if (task.workClass === "DIRECTIVE" && canCreateDirective(perm)) {
+      return null;
+    }
     return assertCommitteeMutation(user, task.committeeId);
   }
   return null;

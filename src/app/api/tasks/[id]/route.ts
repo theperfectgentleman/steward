@@ -10,6 +10,7 @@ import {
   requireCommitteeForWorkClass,
 } from "@/lib/work-context.server";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
 import {
   canActOnApprovalStep,
   currentApprovalStep,
@@ -320,6 +321,17 @@ export async function PATCH(
     },
     include: taskDetailInclude,
   });
+
+  if (body.status && body.status !== existing.status) {
+    await logActivity({
+      entityType: "TASK",
+      entityId: task.id,
+      action: "TASK_STATUS_CHANGED",
+      actorId: auth.user.id,
+      organizationId: orgId,
+      metadata: { from: existing.status, to: body.status },
+    });
+  }
 
   return NextResponse.json(task);
 }

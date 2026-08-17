@@ -5,6 +5,7 @@ import { useApp } from "@/providers/AppProvider";
 import { AppShell } from "@/components/AppShell";
 import { LoginPicker } from "@/components/LoginPicker";
 import { OrgPickerLanding } from "@/components/OrgPickerLanding";
+import { ForcedPasswordChange } from "@/components/ForcedPasswordChange";
 import { PageLoader } from "@/components/loading/PageShimmer";
 import {
   dismissBootSplash,
@@ -64,6 +65,10 @@ export function AuthGate({
   }
 
   if (!user) return <LoginPicker />;
+
+  if (user.mustChangePassword) {
+    return <ForcedPasswordChange />;
+  }
 
   if (requireOrg && !user.activeOrganizationId) {
     return <OrgPickerLanding />;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireActiveOrg, asPermissionUser } from "@/lib/auth";
+import { isOrgTech } from "@/lib/types";
 import {
   authorizeDocumentAccess,
   loadDocumentForOrg,
@@ -18,7 +19,7 @@ export async function POST(
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
-  if (perm.role === "ORG_TECH") {
+  if (isOrgTech(perm)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 

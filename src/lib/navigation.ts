@@ -87,8 +87,15 @@ export function documentsPath(opts?: { tag?: string; committeeId?: string }) {
 }
 
 /** Open Tasks with the assign-directive flow */
-export function tasksAssignPath() {
-  return tasksPath(null, { assign: true });
+export function tasksAssignPath(committeeId?: string | null) {
+  return tasksPath(committeeId, { assign: true });
+}
+
+export function homePath(committeeId?: string | null) {
+  if (committeeId && !isAllGroups(committeeId)) {
+    return `/?committeeId=${encodeURIComponent(committeeId)}`;
+  }
+  return "/";
 }
 
 export function invitePath(token: string) {
@@ -126,8 +133,10 @@ export function peerPathForGroup(
   if (pathname.startsWith("/tasks")) {
     return tasksPath(committeeId === ALL_GROUPS_ID ? null : committeeId);
   }
-  // Home and Messages: picking a group still goes to Tasks for that group
-  if (pathname === "/" || pathname.startsWith("/messages")) {
+  if (pathname === "/") {
+    return committeeId === ALL_GROUPS_ID ? "/" : homePath(committeeId);
+  }
+  if (pathname.startsWith("/messages")) {
     return committeeId === ALL_GROUPS_ID ? "/tasks" : tasksPath(committeeId);
   }
   return tasksPath(committeeId === ALL_GROUPS_ID ? null : committeeId);

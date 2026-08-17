@@ -12,6 +12,7 @@ import type {
   CommitteeTitle,
   OrganizationMemberRole,
   OrganizationSettings,
+  RoleCapabilities,
   UserRole,
 } from "@/lib/types";
 import { filterDismissedAttention } from "@/lib/attention-dismiss";
@@ -35,6 +36,7 @@ export type SessionUser = {
   name: string;
   email: string;
   role: UserRole;
+  mustChangePassword?: boolean;
   isPlatformAdmin?: boolean;
   activeOrganizationId?: string | null;
   organization?: {
@@ -55,7 +57,11 @@ export type SessionUser = {
     isHead: boolean;
     title?: string;
     customTitle?: string | null;
+    canViewAll?: boolean;
+    canApproveOptional?: boolean;
   } | null;
+  committeeCapabilities?: Record<string, RoleCapabilities>;
+  supervisoryCapabilities?: RoleCapabilities | null;
   /** @deprecated */
   presbyteryMembership?: {
     isHead: boolean;

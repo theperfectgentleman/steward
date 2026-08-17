@@ -28,9 +28,12 @@ export function SuperConsoleView() {
   const [form, setForm] = useState({
     name: "",
     slug: "",
-    template: "blank",
+    template: "church",
     supervisoryLabel: "",
+    ownerEmail: "",
+    ownerName: "",
   });
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +54,10 @@ export function SuperConsoleView() {
   }, []);
 
   const createOrg = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || !form.ownerEmail.trim()) return;
     setSaving(true);
     setError(null);
+    setCreatedInviteUrl(null);
     try {
       const res = await fetch("/api/super/orgs", {
         method: "POST",
@@ -63,13 +67,25 @@ export function SuperConsoleView() {
           slug: form.slug || undefined,
           template: form.template,
           supervisoryLabel: form.supervisoryLabel || undefined,
+          ownerEmail: form.ownerEmail.trim(),
+          ownerName: form.ownerName.trim() || undefined,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Create failed");
       }
-      setForm({ name: "", slug: "", template: "blank", supervisoryLabel: "" });
+      if (typeof data.inviteUrl === "string") {
+        setCreatedInviteUrl(data.inviteUrl);
+      }
+      setForm({
+        name: "",
+        slug: "",
+        template: "church",
+        supervisoryLabel: "",
+        ownerEmail: "",
+        ownerName: "",
+      });
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Create failed");
@@ -125,6 +141,16 @@ export function SuperConsoleView() {
             </Link>
             <button
               type="button"
+              onClick={async () => {
+                await fetch("/api/super/unlock", { method: "DELETE" });
+                window.location.href = "/super";
+              }}
+              className="rounded-xl px-3 py-2 text-sm text-stone-400"
+            >
+              Lock
+            </button>
+            <button
+              type="button"
               onClick={logout}
               className="rounded-xl px-3 py-2 text-sm text-stone-400"
             >
@@ -144,6 +170,10 @@ export function SuperConsoleView() {
             <Plus className="h-5 w-5 text-lime-400" />
             Create organization
           </h2>
+          <p className="mt-2 text-sm text-stone-400">
+            Name the Org Admin. An existing account becomes admin immediately.
+            A new email gets an invite.
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <input
               className={FORM_FIELD_CLASS}
@@ -163,8 +193,8 @@ export function SuperConsoleView() {
                 setForm((f) => ({ ...f, template: e.target.value }))
               }
             >
-              <option value="blank">Blank</option>
               <option value="church">Church template</option>
+              <option value="blank">Blank</option>
               <option value="board">Board + committees</option>
             </FormSelect>
             <input
@@ -175,10 +205,35 @@ export function SuperConsoleView() {
                 setForm((f) => ({ ...f, supervisoryLabel: e.target.value }))
               }
             />
+            <input
+              className={FORM_FIELD_CLASS}
+              type="email"
+              placeholder="Org Admin email"
+              value={form.ownerEmail}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, ownerEmail: e.target.value }))
+              }
+            />
+            <input
+              className={FORM_FIELD_CLASS}
+              placeholder="Org Admin name (if inviting)"
+              value={form.ownerName}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, ownerName: e.target.value }))
+              }
+            />
           </div>
           {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+          {createdInviteUrl && (
+            <p className="mt-2 break-all text-sm text-lime-300">
+              Org Admin invite: {createdInviteUrl}
+            </p>
+          )}
           <div className="mt-4">
-            <TouchButton onClick={createOrg} disabled={saving}>
+            <TouchButton
+              onClick={createOrg}
+              disabled={saving || !form.name.trim() || !form.ownerEmail.trim()}
+            >
               Create organization
             </TouchButton>
           </div>

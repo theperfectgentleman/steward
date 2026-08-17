@@ -7,50 +7,20 @@ import {
   DEFAULT_DIRECTIVE_APPROVAL_STACK,
 } from "@/lib/types";
 import { COMMITTEE_CHARTER } from "@/lib/committees";
-
-const DEFAULT_ROLE_TEMPLATES = [
-  {
-    key: "CHAIR",
-    name: "Chair",
-    description: "Committee chairperson",
-    sortOrder: 1,
-    capabilities: {
-      editTasks: true,
-      logMinutes: true,
-      approveMinutes: true,
-      invite: true,
-    },
-  },
-  {
-    key: "DEPUTY",
-    name: "Deputy",
-    description: "Deputy chair",
-    sortOrder: 2,
-    capabilities: {
-      editTasks: true,
-      logMinutes: true,
-    },
-  },
-  {
-    key: "SECRETARY",
-    name: "Secretary",
-    description: "Committee secretary",
-    sortOrder: 3,
-    capabilities: {
-      editTasks: true,
-      logMinutes: true,
-    },
-  },
-  {
-    key: "MEMBER",
-    name: "Member",
-    description: "Committee member",
-    sortOrder: 4,
-    capabilities: { updateAssignedTasks: true },
-  },
-] as const;
+import {
+  CHURCH_ROLE_TEMPLATE_SEEDS,
+  DEFAULT_ROLE_TEMPLATE_SEEDS,
+} from "@/lib/role-capabilities";
 
 export type OrgTemplateId = "blank" | "church" | "board";
+
+export function slugifyOrganizationName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
 export async function createOrganization(input: {
   name: string;
@@ -82,7 +52,7 @@ export async function createOrganization(input: {
             committeeBudgetsEnabled: false,
             allowCrossCommitteeRead: false,
             requireOversightOnSelfInitiated: true,
-            allowSupervisoryAssignMembers: true,
+            allowSupervisoryAssignMembers: false,
             directiveApprovalStack:
               template === "church"
                 ? CHURCH_DIRECTIVE_APPROVAL_STACK
@@ -103,7 +73,10 @@ export async function createOrganization(input: {
           create: { name: supervisoryLabel },
         },
         roleTemplates: {
-          create: DEFAULT_ROLE_TEMPLATES.map((t) => ({
+          create: (template === "church"
+            ? CHURCH_ROLE_TEMPLATE_SEEDS
+            : DEFAULT_ROLE_TEMPLATE_SEEDS
+          ).map((t) => ({
             key: t.key,
             name: t.name,
             description: t.description,

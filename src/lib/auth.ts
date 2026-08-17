@@ -5,8 +5,15 @@ import {
   canViewAllCommittees,
   type OrganizationMemberRole,
   type PermissionUser,
+  type RoleCapabilities,
   type UserRole,
 } from "@/lib/types";
+import {
+  capsFromTemplates,
+  committeeTitleTemplateKey,
+  supervisoryTitleTemplateKey,
+} from "@/lib/role-capabilities";
+import { isSuperUnlocked } from "@/lib/super-gate";
 
 export const ACTIVE_ORG_COOKIE = "steward-active-org";
 export const USER_COOKIE = "unitycommit-user";
@@ -32,10 +39,25 @@ export type OrgContext = {
 
 function toPermissionUser(user: SessionUser): PermissionUser {
   const supervisory = user.supervisoryMemberships[0] ?? null;
+  const templates = user.roleTemplates ?? [];
+  const committeeCapabilities: Record<string, RoleCapabilities> = {};
+  for (const m of user.committeeMemberships) {
+    committeeCapabilities[m.committeeId] = capsFromTemplates(
+      templates,
+      committeeTitleTemplateKey(m.title),
+    );
+  }
+  const supervisoryCapabilities = supervisory
+    ? capsFromTemplates(
+        templates,
+        supervisory.roleTemplateKey ??
+          supervisoryTitleTemplateKey(supervisory.title, supervisory.isHead),
+      )
+    : null;
   return {
     id: user.id,
     role: user.role,
-    orgRole: user.activeMembership?.role ?? (user.role as OrganizationMemberRole),
+    orgRole: user.activeMembership?.role ?? null,
     committeeMemberships: user.committeeMemberships.map((m) => ({
       committeeId: m.committeeId,
       title: m.title,
@@ -46,10 +68,15 @@ function toPermissionUser(user: SessionUser): PermissionUser {
           isHead: supervisory.isHead,
           title: supervisory.title,
           customTitle: supervisory.customTitle,
-          canViewAll: supervisory.canViewAll,
-          canApproveOptional: supervisory.canApproveOptional,
+          canViewAll:
+            supervisoryCapabilities?.canViewAll ?? supervisory.canViewAll,
+          canApproveOptional:
+            supervisoryCapabilities?.canApproveOptional ??
+            supervisory.canApproveOptional,
         }
       : null,
+    committeeCapabilities,
+    supervisoryCapabilities,
     orgSettings: user.orgContext
       ? {
           allowCrossCommitteeRead: user.orgContext.settings.allowCrossCommitteeRead,
@@ -159,12 +186,20 @@ export async function getSessionUser() {
       )
     : [];
 
+  const roleTemplates = orgContext
+    ? await prisma.roleTemplate.findMany({
+        where: { organizationId: orgContext.organizationId },
+        select: { key: true, capabilities: true },
+      })
+    : [];
+
   return {
     ...user,
     activeMembership,
     orgContext,
     committeeMemberships,
     supervisoryMemberships,
+    roleTemplates,
     /** @deprecated */
     presbyteryMembership: supervisoryMemberships[0] ?? null,
     isPlatformAdmin: Boolean(user.platformAdmin),
@@ -215,6 +250,14 @@ export async function requirePlatformAdmin(): Promise<
   if (!result.user.isPlatformAdmin) {
     return { error: forbidden("Platform admin required") };
   }
+  if (!(await isSuperUnlocked(result.user.id))) {
+    return {
+      error: NextResponse.json(
+        { error: "Super unlock required", code: "SUPER_LOCKED" },
+        { status: 403 },
+      ),
+    };
+  }
   return result;
 }
 
@@ -226,7 +269,7 @@ export async function requireRoles(
   const result = await requireActiveOrg();
   if (result.error) return result;
   const orgRole = result.user.orgContext!.orgRole;
-  if (!roles.includes(orgRole as UserRole) && !roles.includes(result.user.role)) {
+  if (!roles.includes(orgRole as UserRole)) {
     return { error: forbidden() };
   }
   return { user: result.user };
@@ -251,9 +294,7 @@ export function assertCommitteeMutation(
 }
 
 function isOrgAdminLike(user: SessionUser) {
-  return (
-    user.orgContext?.orgRole === "ORG_ADMIN" || user.role === "ORG_ADMIN"
-  );
+  return user.orgContext?.orgRole === "ORG_ADMIN";
 }
 
 /** @deprecated use assertCommitteeMutation */
@@ -284,10 +325,10 @@ export function assertCommitteeAccess(
 }
 
 export function assertOrgAdmin(user: SessionUser): NextResponse | null {
-  if (user.orgContext?.orgRole === "ORG_ADMIN" || user.role === "ORG_ADMIN") {
+  if (user.orgContext?.orgRole === "ORG_ADMIN") {
     return null;
   }
-  if (user.orgContext?.orgRole === "ORG_TECH" || user.role === "ORG_TECH") {
+  if (user.orgContext?.orgRole === "ORG_TECH") {
     return null;
   }
   return forbidden("Org admin required");

@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { requirePlatformAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createOrganization, transferOrgAdmin } from "@/lib/organizations";
+import {
+  createOrganization,
+  slugifyOrganizationName,
+  transferOrgAdmin,
+} from "@/lib/organizations";
 import type { OrgTemplateId } from "@/lib/organizations";
+import { createOrgAdminInviteForUser } from "@/lib/invites";
+import { isValidEmail, normalizeEmail } from "@/lib/identity";
+import { logActivity } from "@/lib/activity";
 
 export async function GET() {
   const auth = await requirePlatformAdmin();
@@ -31,33 +38,51 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     name?: string;
     slug?: string;
-    ownerUserId?: string;
-    ownerEmail?: string;
     template?: OrgTemplateId;
     supervisoryLabel?: string;
+    ownerEmail?: string;
+    ownerName?: string;
   };
 
   if (!body.name?.trim()) {
     return NextResponse.json({ error: "name required" }, { status: 400 });
   }
 
+  const ownerEmail = body.ownerEmail?.trim()
+    ? normalizeEmail(body.ownerEmail)
+    : "";
+  if (!ownerEmail || !isValidEmail(ownerEmail)) {
+    return NextResponse.json(
+      { error: "Org Admin email is required" },
+      { status: 400 },
+    );
+  }
+
   const slug =
     body.slug?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") ||
-    body.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    slugifyOrganizationName(body.name);
 
-  let ownerUserId = body.ownerUserId ?? auth.user.id;
-  if (body.ownerEmail) {
-    const owner = await prisma.user.findUnique({
-      where: { email: body.ownerEmail.trim().toLowerCase() },
+  const existingOwner = await prisma.user.findUnique({
+    where: { email: ownerEmail },
+  });
+
+  let ownerUserId: string;
+  let pendingInvite = false;
+
+  if (!existingOwner) {
+    const created = await prisma.user.create({
+      data: {
+        name: body.ownerName?.trim() || ownerEmail.split("@")[0],
+        email: ownerEmail,
+        status: "PENDING",
+      },
     });
-    if (!owner) {
-      return NextResponse.json({ error: "Owner email not found" }, { status: 404 });
-    }
-    ownerUserId = owner.id;
+    ownerUserId = created.id;
+    pendingInvite = true;
+  } else {
+    ownerUserId = existingOwner.id;
+    pendingInvite =
+      existingOwner.status !== "ACTIVE" || !existingOwner.passwordHash;
   }
 
   try {
@@ -65,10 +90,32 @@ export async function POST(request: Request) {
       name: body.name.trim(),
       slug,
       ownerUserId,
-      template: body.template ?? "blank",
+      template: body.template ?? "church",
       supervisoryLabel: body.supervisoryLabel,
     });
-    return NextResponse.json(org, { status: 201 });
+
+    let inviteUrl: string | null = null;
+    if (pendingInvite) {
+      const invited = await createOrgAdminInviteForUser({
+        organizationId: org.id,
+        userId: ownerUserId,
+        createdById: auth.user.id,
+        origin: new URL(request.url).origin,
+        organizationName: org.name,
+      });
+      inviteUrl = invited.inviteUrl;
+    }
+
+    await logActivity({
+      entityType: "STRUCTURE",
+      entityId: org.id,
+      action: "ORGANIZATION_CREATED",
+      actorId: auth.user.id,
+      organizationId: org.id,
+      metadata: { ownerEmail, pendingInvite },
+    });
+
+    return NextResponse.json({ ...org, inviteUrl, pendingInvite }, { status: 201 });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Create failed";
     return NextResponse.json({ error: message }, { status: 400 });

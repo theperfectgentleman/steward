@@ -27,3 +27,14 @@ export function maskPhone(phone: string): string {
   if (digits.length < 4) return phone;
   return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
 }
+
+const PENDING_PHONE_DOMAIN = "invite.steward.invalid";
+
+export function pendingEmailFromPhone(phone: string): string {
+  const digits = normalizePhone(phone).replace(/\D/g, "");
+  return `pending.${digits}@${PENDING_PHONE_DOMAIN}`;
+}
+
+export function isPlaceholderEmail(email: string): boolean {
+  return normalizeEmail(email).endsWith(`@${PENDING_PHONE_DOMAIN}`);
+}

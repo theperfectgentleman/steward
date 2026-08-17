@@ -6,13 +6,17 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { FormSelect } from "@/components/FormSelect";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
+import { SUPERVISORY_TITLE_LABELS, type SupervisoryTitle } from "@/lib/types";
 import { Check } from "lucide-react";
 
 type InviteMemberSheetProps = {
   open: boolean;
   onClose: () => void;
-  committeeId: string;
+  committeeId?: string | null;
   committeeName?: string;
+  targetType?: "COMMITTEE" | "SUPERVISORY";
+  supervisoryLabel?: string;
+  governanceTitles?: { value: SupervisoryTitle; label: string }[];
   onSuccess?: () => void;
 };
 
@@ -21,13 +25,18 @@ export function InviteMemberSheet({
   onClose,
   committeeId,
   committeeName,
+  targetType = "COMMITTEE",
+  supervisoryLabel,
+  governanceTitles,
   onSuccess,
 }: InviteMemberSheetProps) {
+  const isGovernance = targetType === "SUPERVISORY";
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     title: "MEMBER" as "CHAIR" | "SECRETARY" | "MEMBER",
+    supervisoryTitle: "MEMBER" as SupervisoryTitle,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -35,7 +44,13 @@ export function InviteMemberSheet({
   const [existingAdded, setExistingAdded] = useState(false);
 
   const reset = () => {
-    setForm({ name: "", email: "", phone: "", title: "MEMBER" });
+    setForm({
+      name: "",
+      email: "",
+      phone: "",
+      title: "MEMBER",
+      supervisoryTitle: "MEMBER",
+    });
     setError("");
     setInviteUrl(null);
     setExistingAdded(false);
@@ -43,6 +58,7 @@ export function InviteMemberSheet({
 
   const submit = async (sendNotifications: boolean) => {
     if (!form.name.trim() || !form.email.trim()) return;
+    if (!isGovernance && !committeeId) return;
     setSubmitting(true);
     setError("");
     try {
@@ -50,9 +66,19 @@ export function InviteMemberSheet({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
-          committeeId,
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
           sendNotifications,
+          ...(isGovernance
+            ? {
+                targetType: "SUPERVISORY",
+                supervisoryTitle: form.supervisoryTitle,
+              }
+            : {
+                committeeId,
+                title: form.title,
+              }),
         }),
       });
       const data = await res.json();
@@ -71,6 +97,19 @@ export function InviteMemberSheet({
     }
   };
 
+  const titles =
+    governanceTitles ??
+    (["HEAD", "SECRETARY", "MEMBER"] as const).map((value) => ({
+      value,
+      label: SUPERVISORY_TITLE_LABELS[value],
+    }));
+
+  const sheetTitle = isGovernance
+    ? `Invite to ${supervisoryLabel ?? "governance"}`
+    : committeeName
+      ? `Invite to ${committeeName}`
+      : "Invite member";
+
   return (
     <BottomSheet
       open={open}
@@ -78,7 +117,7 @@ export function InviteMemberSheet({
         reset();
         onClose();
       }}
-      title={committeeName ? `Invite to ${committeeName}` : "Invite member"}
+      title={sheetTitle}
     >
       {inviteUrl ? (
         <div className="space-y-4">
@@ -105,7 +144,7 @@ export function InviteMemberSheet({
             <Check className="h-10 w-10 text-primary" />
           </div>
           <p className="text-sm text-charcoal">
-            They already have an account and were added to the committee. We sent them a
+            They already have an account and were added. We sent them a
             notification.
           </p>
           <TouchButton
@@ -140,19 +179,37 @@ export function InviteMemberSheet({
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
             className={FORM_FIELD_CLASS}
           />
-          <FormSelect
-            value={form.title}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                title: e.target.value as "CHAIR" | "SECRETARY" | "MEMBER",
-              }))
-            }
-          >
-            <option value="MEMBER">Member</option>
-            <option value="SECRETARY">Secretary</option>
-            <option value="CHAIR">Chair</option>
-          </FormSelect>
+          {isGovernance ? (
+            <FormSelect
+              value={form.supervisoryTitle}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  supervisoryTitle: e.target.value as SupervisoryTitle,
+                }))
+              }
+            >
+              {titles.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </FormSelect>
+          ) : (
+            <FormSelect
+              value={form.title}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  title: e.target.value as "CHAIR" | "SECRETARY" | "MEMBER",
+                }))
+              }
+            >
+              <option value="MEMBER">Member</option>
+              <option value="SECRETARY">Secretary</option>
+              <option value="CHAIR">Chair</option>
+            </FormSelect>
+          )}
           {error && (
             <p className="text-sm text-accent bg-accent/10 rounded-xl p-3">{error}</p>
           )}

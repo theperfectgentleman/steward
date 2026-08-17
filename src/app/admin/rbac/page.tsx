@@ -7,6 +7,18 @@ import { FormSelect } from "@/components/FormSelect";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
 import { useApp } from "@/providers/AppProvider";
 import type { ApprovalStackRole, ApprovalStackStep } from "@/lib/types";
+import { ROLE_CAPABILITY_KEYS } from "@/lib/role-capabilities";
+
+const CAPABILITY_LABELS: Record<(typeof ROLE_CAPABILITY_KEYS)[number], string> = {
+  editTasks: "Edit tasks",
+  logMinutes: "Log minutes",
+  approveMinutes: "Approve minutes",
+  invite: "Invite members",
+  updateAssignedTasks: "Update assigned tasks",
+  canViewAll: "View all groups",
+  canCreateDirective: "Assign directives",
+  canApproveOptional: "Optional approve",
+};
 
 const APPROVAL_ROLE_OPTIONS: { value: ApprovalStackRole; label: string }[] = [
   { value: "COMMITTEE_CHAIR", label: "Committee chair" },
@@ -187,13 +199,7 @@ function RbacConsole() {
     );
   };
 
-  const capabilityKeys = [
-    "editTasks",
-    "logMinutes",
-    "approveMinutes",
-    "invite",
-    "updateAssignedTasks",
-  ];
+  const capabilityKeys = ROLE_CAPABILITY_KEYS;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 pb-28">
@@ -379,7 +385,7 @@ function RbacConsole() {
                       toggleCapability(t.key, cap, e.target.checked)
                     }
                   />
-                  {cap}
+                  {CAPABILITY_LABELS[cap]}
                 </label>
               ))}
             </div>

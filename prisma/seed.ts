@@ -5,6 +5,10 @@ import { Pool } from "pg";
 import { COMMITTEE_CHARTER } from "../src/lib/committees";
 import { hashPassword } from "../src/lib/password";
 import { CHURCH_COMMITTEE_APPROVAL_STACK, CHURCH_DIRECTIVE_APPROVAL_STACK } from "../src/lib/types";
+import {
+  CHURCH_ROLE_TEMPLATE_SEEDS,
+  supervisoryTitleTemplateKey,
+} from "../src/lib/role-capabilities";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -143,7 +147,7 @@ async function ensureIcgOrg() {
           committeeBudgetsEnabled: false,
           allowCrossCommitteeRead: false,
           requireOversightOnSelfInitiated: true,
-          allowSupervisoryAssignMembers: true,
+          allowSupervisoryAssignMembers: false,
           directiveApprovalStack: CHURCH_DIRECTIVE_APPROVAL_STACK,
           committeeApprovalStack: CHURCH_COMMITTEE_APPROVAL_STACK,
         },
@@ -158,34 +162,22 @@ async function ensureIcgOrg() {
       organizationId: org.id,
       supervisoryLabel: "Presbytery",
       committeeLabel: "Committee",
+      allowCrossCommitteeRead: false,
+      allowSupervisoryAssignMembers: false,
       directiveApprovalStack: CHURCH_DIRECTIVE_APPROVAL_STACK,
       committeeApprovalStack: CHURCH_COMMITTEE_APPROVAL_STACK,
     },
     update: {
       supervisoryLabel: "Presbytery",
       committeeLabel: "Committee",
+      allowCrossCommitteeRead: false,
+      allowSupervisoryAssignMembers: false,
       directiveApprovalStack: CHURCH_DIRECTIVE_APPROVAL_STACK,
       committeeApprovalStack: CHURCH_COMMITTEE_APPROVAL_STACK,
     },
   });
 
-  const templates = [
-    { key: "CHAIR", name: "Chair", sortOrder: 1 },
-    { key: "DEPUTY", name: "Deputy", sortOrder: 2 },
-    { key: "SECRETARY", name: "Secretary", sortOrder: 3 },
-    { key: "MEMBER", name: "Member", sortOrder: 4 },
-    {
-      key: "SUPERVISORY_HEAD",
-      name: "General Overseer",
-      sortOrder: 10,
-    },
-    {
-      key: "SUPERVISORY_SECRETARY",
-      name: "General Secretary",
-      sortOrder: 11,
-    },
-  ];
-  for (const t of templates) {
+  for (const t of CHURCH_ROLE_TEMPLATE_SEEDS) {
     await prisma.roleTemplate.upsert({
       where: {
         organizationId_key: { organizationId: org.id, key: t.key },
@@ -194,10 +186,16 @@ async function ensureIcgOrg() {
         organizationId: org.id,
         key: t.key,
         name: t.name,
+        description: t.description,
         sortOrder: t.sortOrder,
-        capabilities: {},
+        capabilities: t.capabilities,
       },
-      update: { name: t.name, sortOrder: t.sortOrder },
+      update: {
+        name: t.name,
+        description: t.description,
+        sortOrder: t.sortOrder,
+        capabilities: t.capabilities,
+      },
     });
   }
 
@@ -307,6 +305,10 @@ async function ensureSupervisoryMembership(
 ) {
   const isHead = opts.isHead === true || opts.title === "HEAD";
   const title = opts.title ?? (isHead ? "HEAD" : "MEMBER");
+  const roleTemplateKey = supervisoryTitleTemplateKey(title, isHead);
+  const canViewAll = opts.canViewAll ?? (isHead || title === "SECRETARY");
+  const canApproveOptional =
+    opts.canApproveOptional ?? (isHead || title === "SECRETARY");
   await prisma.supervisoryMember.upsert({
     where: {
       userId_groupId: { userId, groupId },
@@ -317,15 +319,17 @@ async function ensureSupervisoryMembership(
       isHead,
       title,
       customTitle: opts.customTitle,
-      canViewAll: opts.canViewAll ?? (isHead || title === "SECRETARY"),
-      canApproveOptional: opts.canApproveOptional ?? isHead,
+      roleTemplateKey,
+      canViewAll,
+      canApproveOptional,
     },
     update: {
       isHead,
       title,
       customTitle: opts.customTitle,
-      canViewAll: opts.canViewAll ?? (isHead || title === "SECRETARY"),
-      canApproveOptional: opts.canApproveOptional ?? isHead,
+      roleTemplateKey,
+      canViewAll,
+      canApproveOptional,
     },
   });
 }
@@ -1024,7 +1028,7 @@ async function main() {
         title: "SECRETARY",
         customTitle: "General Secretary",
         canViewAll: true,
-        canApproveOptional: false,
+        canApproveOptional: true,
       });
     } else if (spec.supervisoryMember) {
       await ensureSupervisoryMembership(user.id, supervisoryGroup.id, {

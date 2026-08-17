@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, validatePassword } from "@/lib/password";
-import { setSessionCookie, toSessionPayload } from "@/lib/session";
+import { setActiveOrgCookie, setSessionCookie, toSessionPayload } from "@/lib/session";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
 
   const passwordHash = await hashPassword(body.password);
   const now = new Date();
+  let acceptedOrganizationId: string | null = null;
 
   const user = await prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
       data: {
         passwordHash,
         status: "ACTIVE",
+        mustChangePassword: false,
         ...(verified.channel === "EMAIL" ? { emailVerifiedAt: now } : {}),
         ...(verified.channel === "SMS" ? { phoneVerifiedAt: now } : {}),
       },
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
     });
 
     if (body.purpose === "INVITE" && body.inviteToken) {
-      await tx.invite.updateMany({
+      const accepted = await tx.invite.updateMany({
         where: {
           token: body.inviteToken,
           userId: body.userId,
@@ -69,6 +71,13 @@ export async function POST(request: Request) {
         },
         data: { acceptedAt: now },
       });
+      if (accepted.count > 0) {
+        const invite = await tx.invite.findUnique({
+          where: { token: body.inviteToken },
+          select: { organizationId: true },
+        });
+        acceptedOrganizationId = invite?.organizationId ?? null;
+      }
     }
 
     return updated;
@@ -77,6 +86,7 @@ export async function POST(request: Request) {
   if (body.purpose === "INVITE") {
     const payload = toSessionPayload({
       ...user,
+      mustChangePassword: false,
       isPlatformAdmin: Boolean(user.platformAdmin),
       supervisoryMemberships: user.supervisoryMemberships,
       organizationMemberships: user.organizationMemberships.map((m) => ({
@@ -88,8 +98,14 @@ export async function POST(request: Request) {
         },
       })),
     });
-    const response = NextResponse.json(payload);
+    const response = NextResponse.json({
+      ...payload,
+      organizationId: acceptedOrganizationId,
+    });
     setSessionCookie(response, user.id);
+    if (acceptedOrganizationId) {
+      setActiveOrgCookie(response, acceptedOrganizationId);
+    }
     return response;
   }
 

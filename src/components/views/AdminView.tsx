@@ -6,7 +6,9 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { InviteMemberSheet } from "@/components/InviteMemberSheet";
 import { PeoplePickerField } from "@/components/people/PeoplePickerField";
 import { useApp } from "@/providers/AppProvider";
-import { USER_ROLE_LABELS, isSuperAdmin, SUPERVISORY_TITLE_LABELS, type SupervisoryTitle, type UserRole } from "@/lib/types";
+import { USER_ROLE_LABELS, isOrgAdmin, SUPERVISORY_TITLE_LABELS, type SupervisoryTitle, type UserRole } from "@/lib/types";
+import { toPermissionUser } from "@/lib/permissions-client";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { formatDateTime } from "@/lib/dates";
 import { FormSelect } from "@/components/FormSelect";
 import { FORM_FIELD_CLASS } from "@/lib/form-field";
@@ -17,6 +19,7 @@ type User = {
   name: string;
   email?: string;
   role: UserRole;
+  orgRole?: UserRole;
 };
 
 type Committee = {
@@ -33,13 +36,17 @@ const REPORTING_OPTIONS = ["Weekly", "Biweekly", "Monthly", "Quarterly"];
 export function AdminView() {
   const { user, appSettings, refreshAppSettings } = useApp();
   const budgetsEnabled = appSettings?.committeeBudgetsEnabled === true;
-  const canToggleBudgets = user ? isSuperAdmin(user.role) : false;
+  const canToggleBudgets = user ? isOrgAdmin(toPermissionUser(user)) : false;
   const [users, setUsers] = useState<User[]>([]);
   const [committees, setCommittees] = useState<Committee[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedCommittees, setSelectedCommittees] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState<"CHAIR" | "SECRETARY" | "MEMBER">("MEMBER");
   const [form, setForm] = useState({ name: "", email: "", phone: "", role: "ORG_PARTICIPANT" as UserRole });
+  const [userActionError, setUserActionError] = useState("");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [existingAdded, setExistingAdded] = useState(false);
   const [supervisoryRoster, setSupervisoryRoster] = useState<{
     members: {
       id: string;
@@ -75,17 +82,32 @@ export function AdminView() {
     refresh();
   }, []);
 
-  const createUser = async () => {
-    if (!form.name || !form.email) return;
+  const addUser = async (mode: "invite" | "create") => {
+    if (!form.email.trim() && !form.phone.trim()) return;
     setSaving(true);
+    setUserActionError("");
+    setInviteUrl(null);
+    setTemporaryPassword(null);
+    setExistingAdded(false);
     try {
-      await fetch("/api/users", {
+      const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, mode }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Could not add user");
+      if (data.type === "invite") {
+        setInviteUrl(data.inviteUrl ?? null);
+      } else if (data.type === "created") {
+        setTemporaryPassword(data.temporaryPassword ?? null);
+      } else if (data.type === "existing") {
+        setExistingAdded(true);
+      }
       setForm({ name: "", email: "", phone: "", role: "ORG_PARTICIPANT" });
       refresh();
+    } catch (e) {
+      setUserActionError(e instanceof Error ? e.message : "Could not add user");
     } finally {
       setSaving(false);
     }
@@ -397,13 +419,22 @@ export function AdminView() {
         {/* Left Column: Create User and Assign Committee */}
         <div className="space-y-4">
           <section className="bg-white rounded-xl border border-charcoal/5 p-4 space-y-3 shadow-xs">
-            <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Create New User</h2>
+            <h2 className="font-bold text-charcoal text-sm uppercase tracking-wider text-accent">Add user</h2>
+            <p className="text-sm text-muted">
+              Look up by email or phone. Existing people get invited into this
+              org. New people get an invite to create an account, or you can
+              create the account and give them a temporary password.
+            </p>
             <div className="space-y-3">
               {(["name", "email", "phone"] as const).map((field) => (
                 <input
                   key={field}
                   type={field === "email" ? "email" : "text"}
-                  placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+                  placeholder={
+                    field === "name"
+                      ? "Name (required for new people)"
+                      : field.charAt(0).toUpperCase() + field.slice(1)
+                  }
                   value={form[field]}
                   onChange={(e) => setForm({ ...form, [field]: e.target.value })}
                   className={FORM_FIELD_CLASS}
@@ -419,9 +450,55 @@ export function AdminView() {
                   </option>
                 ))}
               </FormSelect>
-              <TouchButton size="lg" className="w-full mt-2" disabled={saving} onClick={createUser}>
-                Create User
-              </TouchButton>
+              {userActionError && (
+                <p className="text-sm text-accent bg-accent/10 rounded-xl p-3">
+                  {userActionError}
+                </p>
+              )}
+              {existingAdded && (
+                <p className="text-sm text-charcoal bg-primary/10 rounded-xl p-3">
+                  That person already has an account. They&apos;ve been added to
+                  this organization.
+                </p>
+              )}
+              {inviteUrl && (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted">
+                    Invite sent. You can also copy the link.
+                  </p>
+                  <CopyLinkButton url={inviteUrl} label="Copy invite link" />
+                </div>
+              )}
+              {temporaryPassword && (
+                <p className="text-sm text-charcoal bg-primary/10 rounded-xl p-3 break-all">
+                  Account created. Temporary password:{" "}
+                  <span className="font-mono font-semibold">{temporaryPassword}</span>
+                  . They must change it on first sign-in.
+                </p>
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <TouchButton
+                  size="lg"
+                  className="w-full"
+                  disabled={saving || (!form.email.trim() && !form.phone.trim())}
+                  onClick={() => addUser("invite")}
+                >
+                  Send invite
+                </TouchButton>
+                <TouchButton
+                  size="lg"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={
+                    saving ||
+                    !form.name.trim() ||
+                    (!form.email.trim() && !form.phone.trim())
+                  }
+                  onClick={() => addUser("create")}
+                >
+                  Create account
+                </TouchButton>
+              </div>
             </div>
           </section>
 
@@ -434,7 +511,7 @@ export function AdminView() {
               <option value="">Select user…</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.name} — {USER_ROLE_LABELS[u.role]}
+                  {u.name} — {USER_ROLE_LABELS[u.orgRole ?? u.role]}
                 </option>
               ))}
             </FormSelect>

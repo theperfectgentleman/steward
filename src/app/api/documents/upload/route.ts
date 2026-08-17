@@ -13,7 +13,7 @@ import {
   resolveDefaultApproverIds,
 } from "@/lib/document-access";
 import { buildR2Key, isR2Configured, putR2Object, sanitizeStorageFileName } from "@/lib/r2";
-import { canReadDocuments, canManageTor } from "@/lib/types";
+import { canReadDocuments, canManageTor, effectiveOrgRole, isOrgTech } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +23,9 @@ function canManageLibraryDocuments(
   perm: ReturnType<typeof asPermissionUser>,
   committeeId?: string | null,
 ) {
-  if (perm.role === "ORG_TECH") return false;
-  if (perm.role === "ORG_ADMIN" || perm.role === "ORG_PARTICIPANT") {
+  if (isOrgTech(perm)) return false;
+  const orgRole = effectiveOrgRole(perm);
+  if (orgRole === "ORG_ADMIN" || orgRole === "ORG_PARTICIPANT") {
     return true;
   }
   if (!committeeId) return false;
@@ -43,9 +44,9 @@ export async function POST(request: Request) {
   }
 
   const perm = asPermissionUser(auth.user);
-  if (perm.role === "ORG_TECH") {
+  if (isOrgTech(perm)) {
     return NextResponse.json(
-      { error: "System admins cannot manage documents" },
+      { error: "Org Tech cannot manage documents" },
       { status: 403 },
     );
   }

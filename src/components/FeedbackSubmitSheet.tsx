@@ -8,6 +8,7 @@ import { TouchButton } from "./TouchButton";
 import { SearchableCommitteeSelect } from "./SearchableCommitteeSelect";
 import { FORM_TEXTAREA_CLASS } from "@/lib/form-field";
 import { useApp } from "@/providers/AppProvider";
+import { committeeListScope } from "@/lib/permissions-client";
 import {
   FEEDBACK_LIMITS,
   FEEDBACK_TYPE_LABELS,
@@ -41,9 +42,7 @@ export function FeedbackSubmitSheet({
 
   useEffect(() => {
     if (!user) return;
-    const scope = user.role === "ORG_ADMIN" || user.role === "ORG_PARTICIPANT"
-      ? "all"
-      : user.id;
+    const scope = committeeListScope(user);
     fetch(`/api/committees?scope=${scope}`)
       .then((r) => r.json())
       .then((data: Committee[]) => {

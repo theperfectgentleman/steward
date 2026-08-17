@@ -21,7 +21,10 @@ export type TaskWorkClass = "DIRECTIVE" | "COMMITTEE" | "PERSONAL";
 export type EntityType =
   | "TASK"
   | "LIBRARY_DOCUMENT"
-  | "DOCUMENT";
+  | "DOCUMENT"
+  | "EVENT"
+  | "INVITE"
+  | "STRUCTURE";
 
 export type SupervisoryTitle = "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM";
 
@@ -67,6 +70,17 @@ export type CommitteeMembership = {
   customTitle?: string | null;
 };
 
+export type RoleCapabilities = {
+  editTasks: boolean;
+  logMinutes: boolean;
+  approveMinutes: boolean;
+  invite: boolean;
+  updateAssignedTasks: boolean;
+  canViewAll: boolean;
+  canCreateDirective: boolean;
+  canApproveOptional: boolean;
+};
+
 export type OrganizationSettings = {
   supervisoryLabel: string;
   committeeLabel: string;
@@ -97,6 +111,8 @@ export type PermissionUser = {
   supervisoryMembership?: SupervisoryMembership | null;
   /** @deprecated use supervisoryMembership */
   presbyteryMembership?: SupervisoryMembership | null;
+  committeeCapabilities?: Record<string, RoleCapabilities>;
+  supervisoryCapabilities?: RoleCapabilities | null;
   orgSettings?: Pick<
     OrganizationSettings,
     | "allowCrossCommitteeRead"
@@ -203,7 +219,7 @@ export const TASK_STATUSES: TaskStatus[] = [
 ];
 
 export function effectiveOrgRole(user: PermissionUser): OrganizationMemberRole {
-  return user.orgRole ?? (user.role as OrganizationMemberRole);
+  return user.orgRole ?? "ORG_PARTICIPANT";
 }
 
 export function getCommitteeTitle(
@@ -255,17 +271,17 @@ export function isSupervisorySecretary(user: PermissionUser): boolean {
 
 export function canViewAllCommittees(user: PermissionUser): boolean {
   if (isOrgAdmin(user) || isOrgTech(user)) return true;
+  if (user.supervisoryCapabilities?.canViewAll) return true;
   const s = supervisory(user);
-  if (s?.canViewAll || s?.isHead || s?.title === "HEAD" || s?.title === "SECRETARY") {
-    return true;
-  }
+  if (s?.canViewAll) return true;
   return user.orgSettings?.allowCrossCommitteeRead === true;
 }
 
 export function canOptionallyApprove(user: PermissionUser): boolean {
   if (isOrgAdmin(user)) return true;
+  if (user.supervisoryCapabilities?.canApproveOptional) return true;
   const s = supervisory(user);
-  return Boolean(s?.canApproveOptional || s?.isHead || s?.title === "HEAD");
+  return Boolean(s?.canApproveOptional);
 }
 
 export function canManageUsers(user: PermissionUser | UserRole): boolean {
@@ -276,12 +292,8 @@ export function canManageUsers(user: PermissionUser | UserRole): boolean {
   return role === "ORG_ADMIN" || role === "ORG_TECH";
 }
 
-export function canInviteMembers(
-  user: PermissionUser,
-  committeeId: string,
-): boolean {
-  if (canManageUsers(user)) return true;
-  return getCommitteeTitle(user, committeeId) === "CHAIR";
+export function canInviteMembers(user: PermissionUser): boolean {
+  return isOrgAdmin(user);
 }
 
 export function canManageCommitteeConfig(
@@ -307,11 +319,20 @@ export function canReadDocuments(
   return getCommitteeTitle(user, committeeId) != null;
 }
 
+function committeeCaps(
+  user: PermissionUser,
+  committeeId: string,
+): RoleCapabilities | undefined {
+  return user.committeeCapabilities?.[committeeId];
+}
+
 export function canEditTasks(
   user: PermissionUser,
   committeeId: string,
 ): boolean {
   if (isOrgAdmin(user)) return true;
+  const caps = committeeCaps(user, committeeId);
+  if (caps) return caps.editTasks;
   const title = getCommitteeTitle(user, committeeId);
   return title === "CHAIR" || title === "SECRETARY" || title === "DEPUTY";
 }
@@ -320,6 +341,9 @@ export function canLogMinutes(
   user: PermissionUser,
   committeeId: string,
 ): boolean {
+  if (isOrgAdmin(user)) return true;
+  const caps = committeeCaps(user, committeeId);
+  if (caps) return caps.logMinutes;
   return canEditTasks(user, committeeId);
 }
 
@@ -328,6 +352,8 @@ export function canApproveMinutes(
   committeeId: string,
 ): boolean {
   if (isOrgAdmin(user)) return true;
+  const caps = committeeCaps(user, committeeId);
+  if (caps) return caps.approveMinutes;
   return getCommitteeTitle(user, committeeId) === "CHAIR";
 }
 
@@ -342,7 +368,9 @@ export function canManageTor(
 
 /** Create directive (supervisory-issued) tasks */
 export function canCreateDirective(user: PermissionUser): boolean {
-  return isOrgAdmin(user) || isSupervisoryMember(user);
+  if (isOrgAdmin(user)) return true;
+  if (user.supervisoryCapabilities?.canCreateDirective) return true;
+  return false;
 }
 
 export function canRsvp(user: PermissionUser): boolean {
@@ -394,6 +422,9 @@ export const DEFAULT_ORG_CAPABILITIES = {
   approveMinutes: false,
   invite: false,
   updateAssignedTasks: true,
+  canViewAll: false,
+  canCreateDirective: false,
+  canApproveOptional: false,
 } as const;
 
 export type OrgCapabilityKey = keyof typeof DEFAULT_ORG_CAPABILITIES;

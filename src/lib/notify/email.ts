@@ -173,22 +173,24 @@ export async function sendEmail(payload: EmailPayload): Promise<void> {
 export async function sendInviteEmail(params: {
   to: string;
   name: string;
-  committeeName: string;
+  committeeName?: string;
+  organizationName?: string;
   inviteUrl: string;
 }) {
+  const place = params.committeeName ?? params.organizationName ?? "Steward";
   const { html, text } = buildTransactionalEmail({
-    preview: `Invitation to join ${params.committeeName}`,
+    preview: `Invitation to join ${place}`,
     greeting: `Hi ${params.name},`,
-    bodyHtml: `<p style="margin:0 0 12px;">You've been invited to join <strong>${params.committeeName}</strong> on Steward.</p>
+    bodyHtml: `<p style="margin:0 0 12px;">You've been invited to join <strong>${place}</strong> on Steward.</p>
 ${emailButton(params.inviteUrl, "Accept invitation")}
 <p style="margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#52525b;">This link expires in 7 days.</p>`,
-    footerNote: `Sent by Steward for ${params.committeeName}. If you weren't expecting this, you can ignore this email.`,
+    footerNote: `Sent by Steward for ${place}. If you weren't expecting this, you can ignore this email.`,
   });
 
   await sendEmail({
     to: params.to,
     toName: params.name,
-    subject: `Invitation to ${params.committeeName} on Steward`,
+    subject: `Invitation to ${place} on Steward`,
     text,
     html,
     tag: "invite",

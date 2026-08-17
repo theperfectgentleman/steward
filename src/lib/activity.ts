@@ -7,6 +7,7 @@ export async function logActivity(params: {
   entityId: string;
   action: string;
   actorId: string;
+  organizationId?: string | null;
   metadata?: Prisma.InputJsonValue;
 }) {
   return prisma.activityLog.create({
@@ -15,6 +16,7 @@ export async function logActivity(params: {
       entityId: params.entityId,
       action: params.action,
       actorId: params.actorId,
+      organizationId: params.organizationId ?? undefined,
       metadata: params.metadata,
     },
   });

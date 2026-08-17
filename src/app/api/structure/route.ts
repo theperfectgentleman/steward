@@ -3,6 +3,7 @@ import { requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { transferOrgAdmin } from "@/lib/organizations";
 import { assertCommitteeDeletable } from "@/lib/work-context.server";
+import { logActivity } from "@/lib/activity";
 
 export async function GET() {
   const auth = await requireActiveOrg();
@@ -101,6 +102,14 @@ export async function POST(request: Request) {
           reportingFrequency: "Monthly",
         },
       });
+      await logActivity({
+        entityType: "STRUCTURE",
+        entityId: committee.id,
+        action: "COMMITTEE_CREATED",
+        actorId: auth.user.id,
+        organizationId: orgId,
+        metadata: { name: committee.name },
+      });
       return NextResponse.json(committee, { status: 201 });
     }
     case "rename_committee": {
@@ -128,6 +137,13 @@ export async function POST(request: Request) {
       if (blocked) return blocked;
       await prisma.committee.deleteMany({
         where: { id: body.committeeId, organizationId: orgId },
+      });
+      await logActivity({
+        entityType: "STRUCTURE",
+        entityId: body.committeeId,
+        action: "COMMITTEE_DELETED",
+        actorId: auth.user.id,
+        organizationId: orgId,
       });
       return NextResponse.json({ ok: true });
     }

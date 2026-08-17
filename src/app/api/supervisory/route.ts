@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { asPermissionUser, requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canManageSupervisoryRoster } from "@/lib/types";
+import {
+  capsFromTemplates,
+  supervisoryTitleTemplateKey,
+} from "@/lib/role-capabilities";
+import { logActivity } from "@/lib/activity";
 
 async function getOrCreateGroup(organizationId: string, label: string) {
   let group = await prisma.supervisoryGroup.findFirst({
@@ -48,7 +53,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRoles(["ORG_ADMIN", "ORG_TECH"]);
+  const auth = await requireRoles(["ORG_ADMIN"]);
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
@@ -86,12 +91,25 @@ export async function POST(request: Request) {
     });
     await prisma.supervisoryMember.updateMany({
       where: { userId: body.userId, groupId: group.id },
-      data: { isHead: true, title: "HEAD" },
+      data: {
+        isHead: true,
+        title: "HEAD",
+        roleTemplateKey: "SUPERVISORY_HEAD",
+      },
     });
     return NextResponse.json({ ok: true });
   }
 
   if (body.action === "update" && body.userId) {
+    const nextTitle = body.title;
+    const nextIsHead = body.isHead;
+    const roleTemplateKey =
+      nextTitle !== undefined || nextIsHead !== undefined
+        ? supervisoryTitleTemplateKey(
+            nextTitle ?? "MEMBER",
+            nextIsHead ?? nextTitle === "HEAD",
+          )
+        : undefined;
     await prisma.supervisoryMember.updateMany({
       where: { userId: body.userId, groupId: group.id },
       data: {
@@ -104,6 +122,7 @@ export async function POST(request: Request) {
           canApproveOptional: body.canApproveOptional,
         }),
         ...(body.isHead !== undefined && { isHead: body.isHead }),
+        ...(roleTemplateKey ? { roleTemplateKey } : {}),
       },
     });
     return NextResponse.json({ ok: true });
@@ -113,6 +132,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
 
+  const title = body.title ?? (body.isHead ? "HEAD" : "MEMBER");
+  const isHead = body.isHead ?? title === "HEAD";
+  const roleTemplateKey = supervisoryTitleTemplateKey(title, isHead);
+  const templates = await prisma.roleTemplate.findMany({
+    where: { organizationId: orgId },
+    select: { key: true, capabilities: true },
+  });
+  const caps = capsFromTemplates(templates, roleTemplateKey);
+
   await prisma.supervisoryMember.upsert({
     where: {
       userId_groupId: { userId: body.userId, groupId: group.id },
@@ -120,23 +148,32 @@ export async function POST(request: Request) {
     create: {
       userId: body.userId,
       groupId: group.id,
-      isHead: body.isHead ?? false,
-      title: body.title ?? (body.isHead ? "HEAD" : "MEMBER"),
+      isHead,
+      title,
       customTitle: body.customTitle?.trim() || null,
-      canViewAll: body.canViewAll ?? false,
-      canApproveOptional: body.canApproveOptional ?? false,
+      roleTemplateKey,
+      canViewAll: body.canViewAll ?? caps.canViewAll,
+      canApproveOptional: body.canApproveOptional ?? caps.canApproveOptional,
     },
     update: {
-      isHead: body.isHead ?? false,
-      ...(body.title !== undefined && { title: body.title }),
+      isHead,
+      title,
+      roleTemplateKey,
       ...(body.customTitle !== undefined && {
         customTitle: body.customTitle?.trim() || null,
       }),
-      ...(body.canViewAll !== undefined && { canViewAll: body.canViewAll }),
-      ...(body.canApproveOptional !== undefined && {
-        canApproveOptional: body.canApproveOptional,
-      }),
+      canViewAll: body.canViewAll ?? caps.canViewAll,
+      canApproveOptional: body.canApproveOptional ?? caps.canApproveOptional,
     },
+  });
+
+  await logActivity({
+    entityType: "STRUCTURE",
+    entityId: group.id,
+    action: "GOVERNANCE_MEMBER_ADDED",
+    actorId: auth.user.id,
+    organizationId: orgId,
+    metadata: { userId: body.userId, title },
   });
 
   return NextResponse.json({ ok: true }, { status: 201 });

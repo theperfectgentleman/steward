@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Church, LogOut, Shield, Users } from "lucide-react";
 import landingBg from "@/assets/landing.png";
 import { useApp } from "@/providers/AppProvider";
+import { OverflowDots } from "@/components/OverflowDots";
+import { CreateOrgSheet } from "@/components/CreateOrgSheet";
 
 function OrgIcon({
   name,
@@ -45,6 +48,7 @@ function OrgIcon({
 export function OrgPickerLanding() {
   const { user, enterOrganization, logout } = useApp();
   const memberships = user?.memberships ?? [];
+  const [createOpen, setCreateOpen] = useState(false);
 
   return (
     <div className="relative min-h-dvh overflow-hidden">
@@ -76,6 +80,14 @@ export function OrgPickerLanding() {
                 <span className="hidden sm:inline">Super</span>
               </Link>
             )}
+            <OverflowDots
+              items={[
+                {
+                  label: "Create organization",
+                  onClick: () => setCreateOpen(true),
+                },
+              ]}
+            />
             <button
               type="button"
               onClick={logout}
@@ -178,6 +190,7 @@ export function OrgPickerLanding() {
           © {new Date().getFullYear()} Steward Platforms. All Rights Reserved.
         </footer>
       </div>
+      <CreateOrgSheet open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }

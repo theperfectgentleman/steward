@@ -125,14 +125,20 @@ export function StructureBuilderView() {
   };
 
   const openInvite = (committeeId: string | null) => {
-    if (!committeeId) {
-      // Supervisory invites: use roster management in Admin for now
-      window.location.href = "/admin";
-      return;
-    }
     setInviteCommitteeId(committeeId);
     setInviteOpen(true);
   };
+
+  const governanceTitles = (data?.roleTemplates ?? [])
+    .filter((t) => t.key.startsWith("SUPERVISORY_"))
+    .map((t) => ({
+      value: (t.key === "SUPERVISORY_HEAD"
+        ? "HEAD"
+        : t.key === "SUPERVISORY_SECRETARY"
+          ? "SECRETARY"
+          : "MEMBER") as SupervisoryTitle,
+      label: t.name,
+    }));
 
   if (!data) {
     return (
@@ -161,7 +167,7 @@ export function StructureBuilderView() {
         <p className="text-sm font-medium text-muted">Organization</p>
         <p className="text-xl font-semibold text-ink">{data.organization.name}</p>
         <p className="text-sm text-muted">
-          You: {user?.organization?.orgRole ?? user?.role}
+          You: {user?.organization?.orgRole ?? "Member"}
         </p>
       </div>
 
@@ -301,11 +307,19 @@ export function StructureBuilderView() {
         </div>
       </div>
 
-      {inviteOpen && inviteCommitteeId && (
+      {inviteOpen && (
         <InviteMemberSheet
           open={inviteOpen}
           onClose={() => setInviteOpen(false)}
           committeeId={inviteCommitteeId}
+          committeeName={
+            data.committees.find((c) => c.id === inviteCommitteeId)?.name
+          }
+          targetType={inviteCommitteeId ? "COMMITTEE" : "SUPERVISORY"}
+          supervisoryLabel={supervisoryLabel}
+          governanceTitles={
+            governanceTitles.length > 0 ? governanceTitles : undefined
+          }
           onSuccess={refresh}
         />
       )}

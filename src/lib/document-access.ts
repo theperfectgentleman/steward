@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { SessionUser } from "@/lib/auth";
 import { asPermissionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canReadDocuments, canViewAllCommittees } from "@/lib/types";
+import { canReadDocuments, canViewAllCommittees, isOrgTech } from "@/lib/types";
 import type { LibraryDocumentTag, NativeDocKind } from "@/lib/documents";
 import {
   DOCUMENT_MEMBER_ROLES,
@@ -190,7 +190,7 @@ export function authorizeDocumentRead(
   committeeId: string | null,
 ): NextResponse | null {
   const perm = asPermissionUser(user);
-  if (perm.role === "ORG_TECH") {
+  if (isOrgTech(perm)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
   if (canViewAllCommittees(perm)) return null;

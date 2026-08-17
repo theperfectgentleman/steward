@@ -17,14 +17,21 @@ import {
   getDocumentTemplateHtml,
   isEmptyDocumentBody,
 } from "@/lib/document-templates";
-import { canReadDocuments, canViewAllCommittees, canManageTor } from "@/lib/types";
+import {
+  canReadDocuments,
+  canViewAllCommittees,
+  canManageTor,
+  effectiveOrgRole,
+  isOrgTech,
+} from "@/lib/types";
 
 function canManageLibraryDocuments(
   perm: ReturnType<typeof asPermissionUser>,
   committeeId?: string | null,
 ) {
-  if (perm.role === "ORG_TECH") return false;
-  if (perm.role === "ORG_ADMIN" || perm.role === "ORG_PARTICIPANT") {
+  if (isOrgTech(perm)) return false;
+  const orgRole = effectiveOrgRole(perm);
+  if (orgRole === "ORG_ADMIN" || orgRole === "ORG_PARTICIPANT") {
     return true;
   }
   if (!committeeId) return false;

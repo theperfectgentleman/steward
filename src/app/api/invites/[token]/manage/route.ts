@@ -22,6 +22,7 @@ export async function POST(
     include: {
       user: true,
       committee: true,
+      organization: { select: { name: true } },
     },
   });
 
@@ -30,7 +31,7 @@ export async function POST(
   }
 
   const perm = asPermissionUser(auth.user);
-  if (!invite.committeeId || !canInviteMembers(perm, invite.committeeId)) {
+  if (!canInviteMembers(perm)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
@@ -43,9 +44,6 @@ export async function POST(
   }
 
   if (body.action === "resend") {
-    if (!invite.committee) {
-      return NextResponse.json({ error: "Invite has no committee" }, { status: 400 });
-    }
     const updated = await prisma.invite.update({
       where: { id: invite.id },
       data: {
@@ -60,13 +58,15 @@ export async function POST(
     await sendInviteEmail({
       to: invite.user.email,
       name: invite.user.name,
-      committeeName: invite.committee.name,
+      committeeName: invite.committee?.name,
+      organizationName: invite.organization.name,
       inviteUrl,
     });
     if (invite.user.phone) {
       await sendInviteSms({
         to: invite.user.phone,
-        committeeName: invite.committee.name,
+        committeeName: invite.committee?.name,
+        organizationName: invite.organization.name,
         inviteUrl,
       });
     }

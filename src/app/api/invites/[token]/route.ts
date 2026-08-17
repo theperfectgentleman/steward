@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { maskEmail, maskPhone } from "@/lib/identity";
+import { maskEmail, maskPhone, isPlaceholderEmail } from "@/lib/identity";
 
 export async function GET(
   _request: Request,
@@ -13,6 +13,7 @@ export async function GET(
     include: {
       user: { select: { id: true, name: true, email: true, phone: true, status: true } },
       committee: { select: { id: true, name: true, charterLetter: true } },
+      organization: { select: { id: true, name: true } },
     },
   });
 
@@ -32,14 +33,21 @@ export async function GET(
     return NextResponse.json({ error: "This invite has expired" }, { status: 410 });
   }
 
+  const emailRaw = isPlaceholderEmail(invite.user.email)
+    ? ""
+    : invite.user.email;
+
   return NextResponse.json({
     token: invite.token,
     userId: invite.user.id,
     name: invite.user.name,
-    email: maskEmail(invite.user.email),
+    email: emailRaw ? maskEmail(invite.user.email) : "",
     phone: invite.user.phone ? maskPhone(invite.user.phone) : null,
-    emailRaw: invite.user.email,
+    emailRaw,
     phoneRaw: invite.user.phone,
+    organizationId: invite.organizationId,
+    organizationName: invite.organization.name,
+    targetType: invite.targetType,
     committee: invite.committee,
     expiresAt: invite.expiresAt,
   });

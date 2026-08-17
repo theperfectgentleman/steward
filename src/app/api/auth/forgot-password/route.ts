@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeEmail, normalizePhone, maskEmail, maskPhone } from "@/lib/identity";
+import { normalizeEmail, normalizePhone } from "@/lib/identity";
+import { issueOtpChallenge, OtpSendError } from "@/lib/otp-send";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -38,27 +39,24 @@ export async function POST(request: Request) {
     );
   }
 
-  const origin = new URL(request.url).origin;
-  const sendRes = await fetch(`${origin}/api/auth/otp/send`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    const sent = await issueOtpChallenge({
       userId: user.id,
       channel: body.channel,
       purpose: "LOGIN_RESET",
-    }),
-  });
+    });
 
-  const data = await sendRes.json();
-  if (!sendRes.ok) {
-    return NextResponse.json({ error: data.error ?? "Could not send code" }, { status: sendRes.status });
+    return NextResponse.json({
+      userId: user.id,
+      maskedDestination: sent.maskedDestination,
+    });
+  } catch (e) {
+    if (e instanceof OtpSendError) {
+      if (e.status === 429) {
+        return NextResponse.json({ error: e.message }, { status: 429 });
+      }
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    throw e;
   }
-
-  return NextResponse.json({
-    userId: user.id,
-    maskedDestination:
-      body.channel === "EMAIL"
-        ? maskEmail(destination)
-        : maskPhone(destination),
-  });
 }

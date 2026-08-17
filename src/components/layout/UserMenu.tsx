@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Building2, LogOut, ArrowLeftRight } from "lucide-react";
 import { useApp } from "@/providers/AppProvider";
+import { OverflowDots } from "@/components/OverflowDots";
+import { CreateOrgSheet } from "@/components/CreateOrgSheet";
 import { useNavModel } from "@/hooks/useNavModel";
 import {
   COMMITTEE_TITLE_LABELS,
@@ -25,6 +27,7 @@ export function UserMenu() {
   const { user, logout, leaveOrganization } = useApp();
   const { committees } = useNavModel();
   const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,14 +113,24 @@ export function UserMenu() {
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl border border-charcoal/10 shadow-lg py-2 z-50 max-h-[min(80vh,480px)] overflow-y-auto">
-          <div className="px-4 py-3 border-b border-charcoal/10">
-            <p className="font-semibold text-charcoal text-sm">{user.name}</p>
-            {orgName && (
-              <p className="text-xs text-muted mt-1 flex items-center gap-1">
-                <Building2 className="h-3 w-3" />
-                {orgName}
-              </p>
-            )}
+          <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-charcoal/10">
+            <div className="min-w-0">
+              <p className="font-semibold text-charcoal text-sm">{user.name}</p>
+              {orgName && (
+                <p className="text-xs text-muted mt-1 flex items-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  {orgName}
+                </p>
+              )}
+            </div>
+            <OverflowDots
+              items={[
+                {
+                  label: "Create organization",
+                  onClick: () => setCreateOpen(true),
+                },
+              ]}
+            />
           </div>
 
           {membershipRows.length > 0 && (
@@ -193,6 +206,7 @@ export function UserMenu() {
           </button>
         </div>
       )}
+      <CreateOrgSheet open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }

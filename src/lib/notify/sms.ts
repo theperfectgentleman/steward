@@ -40,12 +40,14 @@ export async function sendSms(payload: SmsPayload): Promise<void> {
 
 export async function sendInviteSms(params: {
   to: string;
-  committeeName: string;
+  committeeName?: string;
+  organizationName?: string;
   inviteUrl: string;
 }) {
+  const place = params.committeeName ?? params.organizationName ?? "Steward";
   await sendSms({
     to: params.to,
-    body: `You're invited to ${params.committeeName} on Steward. Get started: ${params.inviteUrl}`,
+    body: `You're invited to ${place} on Steward. Get started: ${params.inviteUrl}`,
   });
 }
 

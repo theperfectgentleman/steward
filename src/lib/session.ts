@@ -3,7 +3,12 @@ import {
   ACTIVE_ORG_COOKIE,
   USER_COOKIE,
 } from "@/lib/auth";
-import type { OrganizationMemberRole } from "@/lib/types";
+import type { OrganizationMemberRole, RoleCapabilities } from "@/lib/types";
+import {
+  capsFromTemplates,
+  committeeTitleTemplateKey,
+  supervisoryTitleTemplateKey,
+} from "@/lib/role-capabilities";
 
 type MembershipSummary = {
   organizationId: string;
@@ -18,6 +23,7 @@ type UserWithRelations = {
   name: string;
   email: string;
   role: SessionUser["role"];
+  mustChangePassword?: boolean;
   isPlatformAdmin?: boolean;
   orgContext?: SessionUser["orgContext"];
   committeeMemberships: {
@@ -25,10 +31,12 @@ type UserWithRelations = {
     title: SessionUser["committeeMemberships"][number]["title"];
     customTitle?: string | null;
   }[];
+  roleTemplates?: { key: string; capabilities: unknown }[];
   supervisoryMemberships?: {
     isHead: boolean;
     title?: string;
     customTitle?: string | null;
+    roleTemplateKey?: string | null;
     canViewAll?: boolean;
     canApproveOptional?: boolean;
   }[];
@@ -36,6 +44,7 @@ type UserWithRelations = {
     isHead: boolean;
     title?: string;
     customTitle?: string | null;
+    roleTemplateKey?: string | null;
     canViewAll?: boolean;
     canApproveOptional?: boolean;
   } | null;
@@ -76,6 +85,29 @@ export function buildRolesSummary(input: {
 export function toSessionPayload(user: UserWithRelations) {
   const supervisory =
     user.supervisoryMemberships?.[0] ?? user.presbyteryMembership ?? null;
+  const templates = user.roleTemplates ?? [];
+  const committeeCapabilities: Record<string, RoleCapabilities> = {};
+  for (const m of user.committeeMemberships) {
+    committeeCapabilities[m.committeeId] = capsFromTemplates(
+      templates,
+      committeeTitleTemplateKey(m.title),
+    );
+  }
+  const supervisoryTemplateKey =
+    supervisory &&
+    typeof supervisory.roleTemplateKey === "string" &&
+    supervisory.roleTemplateKey
+      ? supervisory.roleTemplateKey
+      : supervisory
+        ? supervisoryTitleTemplateKey(
+            (supervisory.title as "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM") ??
+              "MEMBER",
+            supervisory.isHead,
+          )
+        : "SUPERVISORY_MEMBER";
+  const supervisoryCapabilities = supervisory
+    ? capsFromTemplates(templates, supervisoryTemplateKey)
+    : null;
 
   const memberships: MembershipSummary[] = (user.organizationMemberships ?? []).map(
     (m) => ({
@@ -99,6 +131,7 @@ export function toSessionPayload(user: UserWithRelations) {
     name: user.name,
     email: user.email,
     role: user.role,
+    mustChangePassword: Boolean(user.mustChangePassword),
     isPlatformAdmin: Boolean(user.isPlatformAdmin),
     activeOrganizationId: user.orgContext?.organizationId ?? null,
     organization: user.orgContext
@@ -122,10 +155,15 @@ export function toSessionPayload(user: UserWithRelations) {
           isHead: supervisory.isHead,
           title: (supervisory.title as "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM") ?? (supervisory.isHead ? "HEAD" : "MEMBER"),
           customTitle: supervisory.customTitle ?? null,
-          canViewAll: supervisory.canViewAll,
-          canApproveOptional: supervisory.canApproveOptional,
+          canViewAll:
+            supervisoryCapabilities?.canViewAll ?? supervisory.canViewAll,
+          canApproveOptional:
+            supervisoryCapabilities?.canApproveOptional ??
+            supervisory.canApproveOptional,
         }
       : null,
+    committeeCapabilities,
+    supervisoryCapabilities,
   };
 }
 

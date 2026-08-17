@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, USER_COOKIE, ACTIVE_ORG_COOKIE } from "@/lib/auth";
+import { SUPER_UNLOCK_COOKIE } from "@/lib/super-gate";
 import { toSessionPayload } from "@/lib/session";
 import { listUserOrganizations } from "@/lib/organizations";
 
@@ -33,5 +34,6 @@ export async function DELETE() {
   const response = NextResponse.json({ ok: true });
   response.cookies.delete(USER_COOKIE);
   response.cookies.delete(ACTIVE_ORG_COOKIE);
+  response.cookies.delete(SUPER_UNLOCK_COOKIE);
   return response;
 }

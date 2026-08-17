@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 
 const ROUNDS = 12;
@@ -18,4 +19,8 @@ export function validatePassword(password: string): string | null {
     return "Password must be at least 8 characters";
   }
   return null;
+}
+
+export function generateTemporaryPassword(): string {
+  return randomBytes(12).toString("base64url");
 }
