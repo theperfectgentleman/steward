@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { canEditTasks, canViewAllCommittees } from "@/lib/types";
 import type { ScheduleFormat, ScheduleKind } from "@/lib/types";
 import { EVENT_KINDS } from "@/lib/event-kinds";
-import { assertCommitteeMatchesOrg } from "@/lib/work-context";
+import { assertCommitteeMatchesOrg } from "@/lib/work-context.server";
 
 const KINDS: ScheduleKind[] = EVENT_KINDS;
 const FORMATS: ScheduleFormat[] = ["IN_PERSON", "VIRTUAL", "HYBRID"];

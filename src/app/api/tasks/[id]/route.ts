@@ -8,7 +8,7 @@ import {
   assertTaskOrgAccess,
   assertTaskOrgMutation,
   requireCommitteeForWorkClass,
-} from "@/lib/work-context";
+} from "@/lib/work-context.server";
 import { prisma } from "@/lib/prisma";
 import {
   canActOnApprovalStep,

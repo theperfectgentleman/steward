@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { transferOrgAdmin } from "@/lib/organizations";
-import { assertCommitteeDeletable } from "@/lib/work-context";
+import { assertCommitteeDeletable } from "@/lib/work-context.server";
 
 export async function GET() {
   const auth = await requireActiveOrg();

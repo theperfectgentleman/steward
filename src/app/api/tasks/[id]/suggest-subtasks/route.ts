@@ -3,7 +3,7 @@ import {
   asPermissionUser,
   requireActiveOrg,
 } from "@/lib/auth";
-import { assertTaskOrgAccess, assertTaskOrgMutation } from "@/lib/work-context";
+import { assertTaskOrgAccess, assertTaskOrgMutation } from "@/lib/work-context.server";
 import { generateSubtaskDrafts } from "@/lib/ai/groq";
 import { prisma } from "@/lib/prisma";
 import {
