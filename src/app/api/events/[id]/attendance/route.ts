@@ -1,36 +1,38 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
+import { asPermissionUser, requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgAccess, assertEventOrgMutation } from "@/lib/event-access";
 import { ensureMeetingForEvent } from "@/lib/meeting-for-event";
 import { prisma } from "@/lib/prisma";
-import { canLogMinutes } from "@/lib/types";
+import { canLogMinutes, canViewAllCommittees } from "@/lib/types";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event?.committeeId) {
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
+  if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canLogMinutes(perm, event.committeeId)) {
+  const canWrite = event.committeeId
+    ? canLogMinutes(perm, event.committeeId)
+    : canViewAllCommittees(perm);
+  if (!canWrite) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const body = (await request.json()) as {

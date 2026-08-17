@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
   const where: Prisma.LibraryDocumentWhereInput = {
     archivedAt: null,
-    OR: [{ organizationId: orgId }, { organizationId: null }],
+    organizationId: orgId,
   };
 
   if (tag && LIBRARY_DOCUMENT_TAGS.includes(tag as LibraryDocumentTag)) {
@@ -121,6 +121,16 @@ export async function POST(request: Request) {
 
   const committeeId = body.committeeId ?? null;
   if (committeeId) {
+    const committee = await prisma.committee.findFirst({
+      where: { id: committeeId, organizationId: auth.org.organizationId },
+      select: { id: true },
+    });
+    if (!committee) {
+      return NextResponse.json(
+        { error: "committee.organizationId must match organizationId" },
+        { status: 400 },
+      );
+    }
     const access = assertCommitteeAccess(auth.user, committeeId);
     if (access) return access;
   }

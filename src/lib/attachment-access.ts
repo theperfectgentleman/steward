@@ -23,13 +23,15 @@ export async function assertAttachmentRead(
   const perm = asPermissionUser(user);
 
   if (entityType === "TASK") {
-    const task = await prisma.task.findUnique({
-      where: { id: entityId },
+    const orgId = user.orgContext?.organizationId;
+    const task = await prisma.task.findFirst({
+      where: { id: entityId, ...(orgId ? { organizationId: orgId } : {}) },
       select: { committeeId: true },
     });
     if (!task) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (!task.committeeId) return null;
     return assertCommitteeAccess(user, task.committeeId);
   }
 
@@ -40,10 +42,7 @@ export async function assertAttachmentRead(
     const doc = await prisma.libraryDocument.findFirst({
       where: {
         id: entityId,
-        OR: [
-          { organizationId: auth.org.organizationId },
-          { organizationId: null },
-        ],
+        organizationId: auth.org.organizationId,
       },
       select: { committeeId: true },
     });
@@ -67,17 +66,20 @@ export async function assertAttachmentWrite(
   const perm = asPermissionUser(user);
 
   if (entityType === "TASK") {
-    const task = await prisma.task.findUnique({
-      where: { id: entityId },
+    const orgId = user.orgContext?.organizationId;
+    const task = await prisma.task.findFirst({
+      where: { id: entityId, ...(orgId ? { organizationId: orgId } : {}) },
       select: { committeeId: true },
     });
     if (!task) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const mutation = assertCommitteeMutation(user, task.committeeId);
-    if (mutation) return mutation;
-    if (!canEditTasks(perm, task.committeeId)) {
-      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    if (task.committeeId) {
+      const mutation = assertCommitteeMutation(user, task.committeeId);
+      if (mutation) return mutation;
+      if (!canEditTasks(perm, task.committeeId)) {
+        return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+      }
     }
     return null;
   }

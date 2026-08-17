@@ -191,6 +191,7 @@ model Organization {
   libraryDocuments   LibraryDocument[]
   messageThreads     MessageThread[]
   events             Event[]
+  tasks              Task[]
 }
 
 model OrganizationSettings {
@@ -416,7 +417,8 @@ model Task {
   returnComment     String?
   dueDate           DateTime?
   estimatedDays     Float?
-  committeeId       String
+  organizationId    String
+  committeeId       String?
   eventId           String?
   parentId          String?
   dependsOnTaskId   String?
@@ -425,15 +427,18 @@ model Task {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  committee  Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  event      Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  parent     Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
-  subtasks   Task[]    @relation("TaskSubtasks")
-  dependsOn  Task?     @relation("TaskDependencies", fields: [dependsOnTaskId], references: [id], onDelete: SetNull)
-  dependents Task[]    @relation("TaskDependencies")
-  assignedTo User?     @relation("AssignedTasks", fields: [assignedToId], references: [id])
-  createdBy  User?     @relation("CreatedTasks", fields: [createdById], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  committee    Committee?   @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+  event        Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  parent       Task?        @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks     Task[]       @relation("TaskSubtasks")
+  dependsOn    Task?        @relation("TaskDependencies", fields: [dependsOnTaskId], references: [id], onDelete: SetNull)
+  dependents   Task[]       @relation("TaskDependencies")
+  assignedTo   User?        @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy    User?        @relation("CreatedTasks", fields: [createdById], references: [id])
 
+  @@index([organizationId, status])
+  @@index([organizationId, workClass, status])
   @@index([eventId])
   @@index([parentId])
   @@index([dependsOnTaskId])
@@ -484,7 +489,7 @@ model Document {
 
 model LibraryDocument {
   id             String                 @id @default(cuid())
-  organizationId String?
+  organizationId String
   title          String
   tag            LibraryDocumentTag     @default(OTHER)
   source         DocumentSource         @default(CREATED)
@@ -503,7 +508,7 @@ model LibraryDocument {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
-  organization Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   committee    Committee?        @relation(fields: [committeeId], references: [id], onDelete: SetNull)
   uploadedBy   User              @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   versions     DocumentVersion[]
@@ -590,11 +595,11 @@ model Event {
   startDate      DateTime
   endDate        DateTime?
   committeeId    String?
-  organizationId String?
+  organizationId String
   createdAt      DateTime       @default(now())
 
   committee    Committee?         @relation(fields: [committeeId], references: [id], onDelete: Cascade)
-  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   rsvps        EventRsvp[]
   tasks        Task[]
   deliverables EventDeliverable[]

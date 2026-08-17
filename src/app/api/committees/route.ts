@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { asPermissionUser, requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOrgSettings } from "@/lib/settings";
+import { assertCommitteeDeletable } from "@/lib/work-context";
 import { canManageCommitteeConfig, canViewAllCommittees } from "@/lib/types";
 
 export async function GET(request: Request) {
@@ -182,6 +183,9 @@ export async function DELETE(request: Request) {
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  const blocked = await assertCommitteeDeletable(id);
+  if (blocked) return blocked;
 
   await prisma.committee.delete({ where: { id } });
   return NextResponse.json({ ok: true });

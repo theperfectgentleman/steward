@@ -1,24 +1,21 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
-import { requireEventCommitteeId } from "@/lib/event-access";
+import { requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgMutation, requireEventCommitteeId } from "@/lib/event-access";
 import { getEventWithProgress } from "@/lib/event-queries";
 import { prisma } from "@/lib/prisma";
-import { canEditTasks } from "@/lib/types";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
@@ -26,16 +23,8 @@ export async function POST(
   const missing = requireEventCommitteeId(event.committeeId);
   if (missing) return missing;
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId!);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId!)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
-  if (access) return access;
 
   const body = (await request.json()) as {
     tasks?: { title: string; description?: string; assignedToId?: string }[];
@@ -49,6 +38,7 @@ export async function POST(
     data: body.tasks.map((t) => ({
       title: t.title.trim(),
       description: t.description?.trim() || null,
+      organizationId: orgId,
       committeeId: event.committeeId!,
       eventId,
       assignedToId: t.assignedToId || null,
@@ -56,6 +46,6 @@ export async function POST(
     })),
   });
 
-  const updated = await getEventWithProgress(eventId);
+  const updated = await getEventWithProgress(eventId, orgId);
   return NextResponse.json(updated, { status: 201 });
 }

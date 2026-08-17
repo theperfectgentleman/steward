@@ -1,37 +1,25 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
+import { requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgAccess, assertEventOrgMutation } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
-import { canEditTasks } from "@/lib/types";
-
-async function loadEvent(eventId: string) {
-  return prisma.event.findUnique({ where: { id: eventId } });
-}
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await loadEvent(eventId);
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
-  if (!event.committeeId) {
-    return NextResponse.json(
-      { error: "Event is not linked to a committee" },
-      { status: 400 },
-    );
-  }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const items = await prisma.agendaItem.findMany({
@@ -46,31 +34,20 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await loadEvent(eventId);
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
-  if (!event.committeeId) {
-    return NextResponse.json(
-      { error: "Event is not linked to a committee" },
-      { status: 400 },
-    );
-  }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
-  if (access) return access;
 
   const body = (await request.json()) as {
     title?: string;
@@ -106,31 +83,20 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await loadEvent(eventId);
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
-  if (!event.committeeId) {
-    return NextResponse.json(
-      { error: "Event is not linked to a committee" },
-      { status: 400 },
-    );
-  }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
-
-  const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, event.committeeId)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  }
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
-  if (access) return access;
 
   const { searchParams } = new URL(request.url);
   const agendaItemId = searchParams.get("agendaItemId");

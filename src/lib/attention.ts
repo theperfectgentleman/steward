@@ -44,11 +44,13 @@ export async function buildAttentionItems(
   const perm = asPermissionUser(user);
   const items: AttentionItem[] = [];
 
+  const orgId = user.orgContext?.organizationId;
   const myTasks = await prisma.task.findMany({
     where: {
       assignedToId: user.id,
       status: { not: "DONE" },
       parentId: null,
+      ...(orgId ? { organizationId: orgId } : {}),
     },
     include: {
       committee: { select: { name: true, organizationId: true } },
@@ -63,7 +65,7 @@ export async function buildAttentionItems(
       kind: "TASK",
       urgency: overdue ? "NOW" : isDueSoon(task.dueDate) ? "SOON" : "NOW",
       title: task.title,
-      subtitle: task.committee.name,
+      subtitle: task.committee?.name ?? "Personal",
       href: tasksPath(task.committeeId, { taskId: task.id }),
       primaryAction: {
         label: "Mark done",
@@ -75,7 +77,6 @@ export async function buildAttentionItems(
   }
 
   // Tasks waiting for this user's review on the current ladder step
-  const orgId = user.orgContext?.organizationId;
   if (orgId) {
     const settings = await getOrgSettings(orgId);
     const inReview = await prisma.task.findMany({
@@ -83,7 +84,7 @@ export async function buildAttentionItems(
         status: "IN_REVIEW",
         parentId: null,
         workClass: { in: ["DIRECTIVE", "COMMITTEE"] },
-        committee: { organizationId: orgId },
+        organizationId: orgId,
       },
       include: {
         committee: { select: { id: true, name: true } },

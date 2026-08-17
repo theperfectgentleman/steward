@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
   asPermissionUser,
-  requireUser,
+  requireActiveOrg,
 } from "@/lib/auth";
+import { assertTaskOrgAccess, assertTaskOrgMutation } from "@/lib/work-context";
 import { generateSubtaskDrafts } from "@/lib/ai/groq";
 import { prisma } from "@/lib/prisma";
 import {
@@ -18,12 +17,13 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id } = await params;
-  const task = await prisma.task.findUnique({
-    where: { id },
+  const orgId = auth.org.organizationId;
+  const task = await prisma.task.findFirst({
+    where: { id, organizationId: orgId },
     include: {
       subtasks: { select: { title: true }, orderBy: { createdAt: "asc" } },
     },
@@ -32,15 +32,15 @@ export async function POST(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, task.committeeId);
+  const mutation = assertTaskOrgMutation(auth.user, task, orgId);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, task.committeeId)) {
+  if (task.committeeId && !canEditTasks(perm, task.committeeId)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const access = assertCommitteeAccess(auth.user, task.committeeId);
+  const access = assertTaskOrgAccess(auth.user, task, orgId);
   if (access) return access;
 
   if (!task.title.trim()) {

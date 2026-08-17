@@ -91,10 +91,7 @@ export async function GET(
           where: {
             id: { in: relatedDocIds },
             archivedAt: null,
-            OR: [
-              { organizationId: auth.org.organizationId },
-              { organizationId: null },
-            ],
+            organizationId: auth.org.organizationId,
           },
           select: { id: true, title: true, tag: true, status: true },
         })
@@ -269,16 +266,11 @@ export async function POST(
     const task = await prisma.task.findFirst({
       where: {
         id: entityId,
-        committee: { organizationId: auth.org.organizationId },
+        organizationId: auth.org.organizationId,
       },
     });
     if (!task) {
-      const anyTask = await prisma.task.findFirst({
-        where: { id: entityId },
-      });
-      if (!anyTask) {
-        return NextResponse.json({ error: "Task not found" }, { status: 404 });
-      }
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
     storedType = "TASK";
   }
@@ -287,10 +279,7 @@ export async function POST(
     const event = await prisma.event.findFirst({
       where: {
         id: entityId,
-        OR: [
-          { organizationId: auth.org.organizationId },
-          { committee: { organizationId: auth.org.organizationId } },
-        ],
+        organizationId: auth.org.organizationId,
       },
     });
     if (!event) {

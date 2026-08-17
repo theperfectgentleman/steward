@@ -3,7 +3,7 @@ import {
   assertCommitteeAccess,
   assertCommitteeMutation,
   asPermissionUser,
-  requireUser,
+  requireActiveOrg,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -17,11 +17,17 @@ import {
   canCreateDirective,
   type TaskWorkClass,
 } from "@/lib/types";
+import {
+  assertCommitteeMatchesOrg,
+  assertTaskRefsInOrg,
+  requireCommitteeForWorkClass,
+} from "@/lib/work-context";
 
 export async function GET(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
+  const orgId = auth.org.organizationId;
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
   const eventId = searchParams.get("eventId");
@@ -47,20 +53,15 @@ export async function GET(request: Request) {
       status: string;
       workClass: TaskWorkClass;
       approvalStepIndex: number;
-      committeeId: string;
-      committee: { organizationId: string };
+      committeeId: string | null;
+      organizationId: string;
     },
   >(tasks: T[]): Promise<T[]> {
     if (!waitingReview) return tasks;
-    const byOrg = new Map<string, Awaited<ReturnType<typeof getOrgSettings>>>();
+    const settings = await getOrgSettings(orgId);
     const out: T[] = [];
     for (const task of tasks) {
       if (task.status !== "IN_REVIEW" || task.workClass === "PERSONAL") continue;
-      let settings = byOrg.get(task.committee.organizationId);
-      if (!settings) {
-        settings = await getOrgSettings(task.committee.organizationId);
-        byOrg.set(task.committee.organizationId, settings);
-      }
       const stack =
         task.workClass === "DIRECTIVE"
           ? settings.directiveApprovalStack
@@ -73,12 +74,15 @@ export async function GET(request: Request) {
     return out;
   }
 
+  const orgWhere = { organizationId: orgId };
+
   if (global) {
     if (!canViewAllCommittees(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
     const tasks = await prisma.task.findMany({
       where: {
+        ...orgWhere,
         parentId: null,
         ...(waitingReview ? { status: "IN_REVIEW" } : {}),
         ...(statusFilter && !waitingReview
@@ -97,8 +101,23 @@ export async function GET(request: Request) {
       : auth.user.committeeMemberships.map((m) => m.committeeId);
     const tasks = await prisma.task.findMany({
       where: {
+        ...orgWhere,
         parentId: null,
-        ...(committeeIds ? { committeeId: { in: committeeIds } } : {}),
+        ...(committeeIds
+          ? {
+              OR: [
+                { committeeId: { in: committeeIds } },
+                {
+                  committeeId: null,
+                  workClass: "PERSONAL",
+                  OR: [
+                    { assignedToId: auth.user.id },
+                    { createdById: auth.user.id },
+                  ],
+                },
+              ],
+            }
+          : {}),
         ...(eventId ? { eventId } : {}),
         ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
         ...(waitingReview
@@ -122,6 +141,7 @@ export async function GET(request: Request) {
 
   const tasks = await prisma.task.findMany({
     where: {
+      ...orgWhere,
       committeeId,
       ...(eventId ? { eventId } : {}),
       ...(assignedToMe ? { assignedToId: auth.user.id } : {}),
@@ -140,68 +160,96 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
+  const orgId = auth.org.organizationId;
   const body = (await request.json()) as {
     title?: string;
     description?: string;
-    committeeId?: string;
+    committeeId?: string | null;
     eventId?: string;
     parentId?: string;
+    dependsOnTaskId?: string;
     dueDate?: string;
     assignedToId?: string;
     workClass?: "DIRECTIVE" | "COMMITTEE" | "PERSONAL";
   };
 
-  if (!body.title || !body.committeeId) {
+  if (!body.title) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, body.committeeId);
-  if (mutation) return mutation;
-
-  const access = assertCommitteeAccess(auth.user, body.committeeId);
-  if (access) return access;
-
+  const committeeId = body.committeeId || null;
   const perm = asPermissionUser(auth.user);
-  const isEditor = canEditTasks(perm, body.committeeId);
   const isSubtask = !!body.parentId;
   let workClass = body.workClass ?? "COMMITTEE";
 
+  const classErr = requireCommitteeForWorkClass(workClass, committeeId);
+  if (classErr) return classErr;
+
+  const matchErr = await assertCommitteeMatchesOrg(committeeId, orgId);
+  if (matchErr) return matchErr;
+
+  if (committeeId) {
+    const mutation = assertCommitteeMutation(auth.user, committeeId);
+    if (mutation) return mutation;
+    const access = assertCommitteeAccess(auth.user, committeeId);
+    if (access) return access;
+  }
+
+  const isEditor = committeeId ? canEditTasks(perm, committeeId) : canViewAllCommittees(perm);
+
   if (isSubtask) {
-    const parent = await prisma.task.findUnique({
-      where: { id: body.parentId },
+    const parent = await prisma.task.findFirst({
+      where: { id: body.parentId, organizationId: orgId },
       include: { parent: { select: { id: true, parentId: true, workClass: true } } },
     });
-    if (!parent || parent.committeeId !== body.committeeId) {
+    if (!parent) {
       return NextResponse.json({ error: "Parent task not found" }, { status: 404 });
     }
-    // Allow 2 nesting levels: root → child → grandchild
+    if (committeeId && parent.committeeId && parent.committeeId !== committeeId) {
+      return NextResponse.json({ error: "Parent task not found" }, { status: 404 });
+    }
     if (parent.parent?.parentId) {
       return NextResponse.json(
         { error: "Only two levels of nesting are supported" },
         { status: 400 },
       );
     }
-    // Infer workClass from parent when not provided
     if (!body.workClass) {
       if (parent.workClass === "DIRECTIVE") workClass = "COMMITTEE";
       else if (parent.workClass === "COMMITTEE") workClass = "PERSONAL";
       else workClass = "PERSONAL";
     }
+    const inferredErr = requireCommitteeForWorkClass(workClass, committeeId);
+    if (inferredErr) return inferredErr;
     body.eventId = body.eventId ?? parent.eventId ?? undefined;
   } else if (workClass === "DIRECTIVE") {
     if (!canViewAllCommittees(perm) && !canCreateDirective(perm)) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
-  } else if (!isEditor) {
+  } else if (workClass !== "PERSONAL" && !isEditor) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  } else if (workClass === "PERSONAL" && !committeeId && !isEditor && !canViewAllCommittees(perm)) {
+    // org-wide personal: any org member may create their own step
   }
+
+  const refsErr = await assertTaskRefsInOrg({
+    organizationId: orgId,
+    assignedToId: body.assignedToId,
+    parentId: body.parentId,
+    dependsOnTaskId: body.dependsOnTaskId,
+  });
+  if (refsErr) return refsErr;
 
   if (body.eventId) {
     const event = await prisma.event.findFirst({
-      where: { id: body.eventId, committeeId: body.committeeId },
+      where: {
+        id: body.eventId,
+        organizationId: orgId,
+        ...(committeeId ? { committeeId } : {}),
+      },
     });
     if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -212,9 +260,11 @@ export async function POST(request: Request) {
     data: {
       title: body.title,
       description: body.description,
-      committeeId: body.committeeId,
+      organizationId: orgId,
+      committeeId,
       eventId: body.eventId ?? null,
       parentId: body.parentId ?? null,
+      dependsOnTaskId: body.dependsOnTaskId ?? null,
       workClass,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
       assignedToId: body.assignedToId ?? null,

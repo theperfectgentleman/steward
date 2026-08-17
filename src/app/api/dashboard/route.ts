@@ -3,16 +3,17 @@ import {
   assertCommitteeAccess,
   asPermissionUser,
   canAccessCommittee,
-  requireUser,
+  requireActiveOrg,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewAllCommittees } from "@/lib/types";
 
 export async function GET(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
+  const orgId = auth.org.organizationId;
   const { searchParams } = new URL(request.url);
   const committeeId = searchParams.get("committeeId");
 
@@ -21,15 +22,18 @@ export async function GET(request: Request) {
     if (access) return access;
   }
 
-  const committeeWhere = committeeId
-    ? { id: committeeId }
-    : canViewAllCommittees(perm)
-      ? undefined
-      : {
-          id: {
-            in: auth.user.committeeMemberships.map((m) => m.committeeId),
-          },
-        };
+  const committeeWhere = {
+    organizationId: orgId,
+    ...(committeeId
+      ? { id: committeeId }
+      : canViewAllCommittees(perm)
+        ? {}
+        : {
+            id: {
+              in: auth.user.committeeMemberships.map((m) => m.committeeId),
+            },
+          }),
+  };
 
   const committees = await prisma.committee.findMany({
     where: committeeWhere,
@@ -85,15 +89,18 @@ export async function GET(request: Request) {
     };
   });
 
-  const committeeFilter = committeeId
-    ? { committeeId }
-    : canViewAllCommittees(perm)
-      ? {}
-      : {
-          committeeId: {
-            in: auth.user.committeeMemberships.map((m) => m.committeeId),
-          },
-        };
+  const committeeFilter = {
+    organizationId: orgId,
+    ...(committeeId
+      ? { committeeId }
+      : canViewAllCommittees(perm)
+        ? {}
+        : {
+            committeeId: {
+              in: auth.user.committeeMemberships.map((m) => m.committeeId),
+            },
+          }),
+  };
 
   const recentTasks = await prisma.task.findMany({
     where: {
@@ -107,7 +114,17 @@ export async function GET(request: Request) {
   });
 
   const pendingMinutes = await prisma.meeting.findMany({
-    where: { approved: false, ...committeeFilter },
+    where: {
+      approved: false,
+      ...(committeeId
+        ? { committeeId }
+        : {
+            OR: [
+              { committee: { organizationId: orgId } },
+              { event: { organizationId: orgId } },
+            ],
+          }),
+    },
     include: { committee: { select: { name: true, id: true } } },
     orderBy: { date: "desc" },
     take: 5,
@@ -115,6 +132,7 @@ export async function GET(request: Request) {
 
   const myOpenTasks = await prisma.task.count({
     where: {
+      organizationId: orgId,
       assignedToId: auth.user.id,
       status: { notIn: ["DONE"] },
       parentId: null,
@@ -150,9 +168,11 @@ export async function GET(request: Request) {
         type: "blocked" as const,
         message: `${t.title} is awaiting`,
         time: t.updatedAt.toISOString(),
-        href: `/tasks?committeeId=${t.committee.id}&column=BLOCKED`,
-        committeeId: t.committee.id,
-        committeeName: t.committee.name,
+        href: t.committee
+          ? `/tasks?committeeId=${t.committee.id}&column=BLOCKED`
+          : `/tasks/${t.id}`,
+        committeeId: t.committee?.id,
+        committeeName: t.committee?.name ?? "Personal",
       })),
     ...recentTasks
       .filter((t) => t.status === "DONE")
@@ -162,9 +182,9 @@ export async function GET(request: Request) {
         type: "completed" as const,
         message: `Completed ${t.title}`,
         time: t.updatedAt.toISOString(),
-        href: `/tasks?committeeId=${t.committee.id}`,
-        committeeId: t.committee.id,
-        committeeName: t.committee.name,
+        href: t.committee ? `/tasks?committeeId=${t.committee.id}` : `/tasks/${t.id}`,
+        committeeId: t.committee?.id,
+        committeeName: t.committee?.name ?? "Personal",
       })),
     ...pendingMinutes.map((m) => ({
       id: `minutes-${m.id}`,
@@ -188,7 +208,9 @@ export async function GET(request: Request) {
 
   const timelineGoals = canViewAllCommittees(perm)
     ? await prisma.timelineGoal.findMany({
-        where: committeeFilter,
+        where: committeeId
+          ? { committeeId }
+          : { committee: { organizationId: orgId } },
         include: {
           committee: {
             select: { id: true, name: true, charterLetter: true },

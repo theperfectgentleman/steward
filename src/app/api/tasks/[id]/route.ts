@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
   asPermissionUser,
-  requireUser,
+  requireActiveOrg,
 } from "@/lib/auth";
+import {
+  assertAssigneeInOrg,
+  assertTaskOrgAccess,
+  assertTaskOrgMutation,
+  requireCommitteeForWorkClass,
+} from "@/lib/work-context";
 import { prisma } from "@/lib/prisma";
 import {
   canActOnApprovalStep,
@@ -55,19 +59,20 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id } = await params;
-  const task = await prisma.task.findUnique({
-    where: { id },
+  const orgId = auth.org.organizationId;
+  const task = await prisma.task.findFirst({
+    where: { id, organizationId: orgId },
     include: taskDetailInclude,
   });
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  const access = assertCommitteeAccess(auth.user, task.committeeId);
+  const access = assertTaskOrgAccess(auth.user, task, orgId);
   if (access) return access;
 
   return NextResponse.json(task);
@@ -77,10 +82,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id } = await params;
+  const orgId = auth.org.organizationId;
   const body = (await request.json()) as {
     status?: TaskStatus;
     assignedToId?: string | null;
@@ -92,8 +98,8 @@ export async function PATCH(
     comment?: string;
   };
 
-  const existing = await prisma.task.findUnique({
-    where: { id },
+  const existing = await prisma.task.findFirst({
+    where: { id, organizationId: orgId },
     include: {
       committee: { select: { organizationId: true } },
       subtasks: {
@@ -105,29 +111,32 @@ export async function PATCH(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
+  const mutation = assertTaskOrgMutation(auth.user, existing, orgId);
   if (mutation) return mutation;
 
-  const access = assertCommitteeAccess(auth.user, existing.committeeId);
+  const access = assertTaskOrgAccess(auth.user, existing, orgId);
   if (access) return access;
 
   const perm = asPermissionUser(auth.user);
-  const isEditor = canEditTasks(perm, existing.committeeId);
+  const isEditor = existing.committeeId
+    ? canEditTasks(perm, existing.committeeId)
+    : canCreateDirective(perm);
   const isAssignee =
-    getCommitteeTitle(perm, existing.committeeId) === "MEMBER" &&
-    existing.assignedToId === auth.user.id;
+    existing.assignedToId === auth.user.id &&
+    (existing.committeeId
+      ? getCommitteeTitle(perm, existing.committeeId) === "MEMBER"
+      : true);
   const isSubtaskCreator =
-    getCommitteeTitle(perm, existing.committeeId) === "MEMBER" &&
     existing.parentId !== null &&
-    existing.createdById === auth.user.id;
+    existing.createdById === auth.user.id &&
+    (existing.committeeId
+      ? getCommitteeTitle(perm, existing.committeeId) === "MEMBER"
+      : true);
 
   // Review workflow actions
   if (body.action) {
     const workClass = existing.workClass as TaskWorkClass;
-    const stack = await stackForWorkClass(
-      existing.committee.organizationId,
-      workClass,
-    );
+    const stack = await stackForWorkClass(existing.organizationId, workClass);
 
     if (body.action === "submit_review") {
       if (workClass === "PERSONAL") {
@@ -287,6 +296,16 @@ export async function PATCH(
     }
   }
 
+  if (body.workClass !== undefined) {
+    const classErr = requireCommitteeForWorkClass(body.workClass, existing.committeeId);
+    if (classErr) return classErr;
+  }
+
+  if (body.assignedToId) {
+    const assigneeErr = await assertAssigneeInOrg(body.assignedToId, orgId);
+    if (assigneeErr) return assigneeErr;
+  }
+
   const task = await prisma.task.update({
     where: { id },
     data: {
@@ -309,24 +328,30 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id } = await params;
-  const existing = await prisma.task.findUnique({ where: { id } });
+  const orgId = auth.org.organizationId;
+  const existing = await prisma.task.findFirst({
+    where: { id, organizationId: orgId },
+  });
   if (!existing) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, existing.committeeId);
+  const mutation = assertTaskOrgMutation(auth.user, existing, orgId);
   if (mutation) return mutation;
 
   const perm = asPermissionUser(auth.user);
-  if (!canEditTasks(perm, existing.committeeId)) {
+  const canDelete = existing.committeeId
+    ? canEditTasks(perm, existing.committeeId)
+    : canCreateDirective(perm) || existing.createdById === auth.user.id;
+  if (!canDelete) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const access = assertCommitteeAccess(auth.user, existing.committeeId);
+  const access = assertTaskOrgAccess(auth.user, existing, orgId);
   if (access) return access;
 
   await prisma.task.delete({ where: { id } });

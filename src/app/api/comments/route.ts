@@ -32,13 +32,17 @@ async function assertCommentAccess(
   requireComment = false,
 ) {
   if (entityType === "TASK") {
-    const auth = await requireUser();
+    const auth = await requireActiveOrg();
     if (auth.error) {
       return { error: auth.error as NextResponse, user: null, role: null };
     }
-    const task = await prisma.task.findUnique({
-      where: { id: entityId },
-      select: { committeeId: true },
+    const orgId = auth.org.organizationId;
+    const task = await prisma.task.findFirst({
+      where: {
+        id: entityId,
+        organizationId: orgId,
+      },
+      select: { committeeId: true, organizationId: true, assignedToId: true, createdById: true },
     });
     if (!task) {
       return {
@@ -47,8 +51,10 @@ async function assertCommentAccess(
         role: null,
       };
     }
-    const access = assertCommitteeAccess(auth.user, task.committeeId);
-    if (access) return { error: access, user: null, role: null };
+    if (task.committeeId) {
+      const access = assertCommitteeAccess(auth.user, task.committeeId);
+      if (access) return { error: access, user: null, role: null };
+    }
     return { error: null, user: auth.user, role: null };
   }
 

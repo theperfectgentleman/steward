@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
-import { requireEventCommitteeId } from "@/lib/event-access";
+import { requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgAccess } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
 import { getR2Object } from "@/lib/r2";
-import { canEditTasks } from "@/lib/types";
 
 export async function GET(
   _request: Request,
@@ -16,19 +10,19 @@ export async function GET(
     params,
   }: { params: Promise<{ id: string; deliverableId: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId, deliverableId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const missing = requireEventCommitteeId(event.committeeId);
-  if (missing) return missing;
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const deliverable = await prisma.eventDeliverable.findFirst({

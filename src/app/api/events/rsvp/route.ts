@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
-import { requireEventCommitteeId } from "@/lib/event-access";
+import { asPermissionUser, requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgAccess } from "@/lib/event-access";
 import { prisma } from "@/lib/prisma";
 import { canRsvp } from "@/lib/types";
 
 export async function PATCH(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const perm = asPermissionUser(auth.user);
@@ -26,15 +22,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const event = await prisma.event.findUnique({ where: { id: body.eventId } });
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: body.eventId, organizationId: orgId },
+  });
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const missing = requireEventCommitteeId(event.committeeId);
-  if (missing) return missing;
-
-  const access = assertCommitteeAccess(auth.user, event.committeeId!);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const rsvp = await prisma.eventRsvp.upsert({

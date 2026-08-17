@@ -1,31 +1,30 @@
 import { NextResponse } from "next/server";
-import {
-  assertCommitteeAccess,
-  assertCommitteeMutation,
-  asPermissionUser,
-  requireUser,
-} from "@/lib/auth";
+import { asPermissionUser, requireActiveOrg } from "@/lib/auth";
+import { assertEventOrgAccess, assertEventOrgMutation } from "@/lib/event-access";
 import {
   ensureMeetingForEvent,
   getMeetingForEvent,
 } from "@/lib/meeting-for-event";
 import { prisma } from "@/lib/prisma";
-import { canApproveMinutes, canLogMinutes } from "@/lib/types";
+import { canApproveMinutes, canLogMinutes, canViewAllCommittees } from "@/lib/types";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event?.committeeId) {
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
+  if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const meeting =
@@ -39,19 +38,22 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireUser();
+  const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
 
   const { id: eventId } = await params;
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event?.committeeId) {
+  const orgId = auth.org.organizationId;
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organizationId: orgId },
+  });
+  if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
-  const mutation = assertCommitteeMutation(auth.user, event.committeeId);
+  const mutation = assertEventOrgMutation(auth.user, event, orgId);
   if (mutation) return mutation;
 
-  const access = assertCommitteeAccess(auth.user, event.committeeId);
+  const access = assertEventOrgAccess(auth.user, event, orgId);
   if (access) return access;
 
   const perm = asPermissionUser(auth.user);
@@ -67,11 +69,21 @@ export async function PATCH(
     return NextResponse.json({ error: "Not a meeting event" }, { status: 400 });
   }
 
-  if (body.approved !== undefined && !canApproveMinutes(perm, event.committeeId)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  if (body.approved !== undefined) {
+    const ok = event.committeeId
+      ? canApproveMinutes(perm, event.committeeId)
+      : canViewAllCommittees(perm);
+    if (!ok) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    }
   }
-  if (body.points !== undefined && !canLogMinutes(perm, event.committeeId)) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  if (body.points !== undefined) {
+    const ok = event.committeeId
+      ? canLogMinutes(perm, event.committeeId)
+      : canViewAllCommittees(perm);
+    if (!ok) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+    }
   }
 
   const updated = await prisma.$transaction(async (tx) => {
