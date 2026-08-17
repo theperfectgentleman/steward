@@ -162,11 +162,11 @@ export function toSessionPayload(user: UserWithRelations) {
           customTitle: supervisory.customTitle ?? null,
           canViewAll:
             isGovernanceLeadSeat(supervisory) ||
-            supervisoryCapabilities.canViewAll ||
+            (supervisoryCapabilities?.canViewAll ?? false) ||
             supervisory.canViewAll === true,
           canApproveOptional:
             isGovernanceLeadSeat(supervisory) ||
-            supervisoryCapabilities.canApproveOptional ||
+            (supervisoryCapabilities?.canApproveOptional ?? false) ||
             supervisory.canApproveOptional === true,
         }
       : null,

@@ -73,11 +73,11 @@ function toPermissionUser(user: SessionUser): PermissionUser {
           title: supervisory.title,
           customTitle: supervisory.customTitle,
           canViewAll:
-            applyGovernanceLeadCaps(supervisory, supervisoryCapabilities)
-              .canViewAll || supervisory.canViewAll === true,
+            (supervisoryCapabilities?.canViewAll ?? false) ||
+            supervisory.canViewAll === true,
           canApproveOptional:
-            applyGovernanceLeadCaps(supervisory, supervisoryCapabilities)
-              .canApproveOptional || supervisory.canApproveOptional === true,
+            (supervisoryCapabilities?.canApproveOptional ?? false) ||
+            supervisory.canApproveOptional === true,
         }
       : null,
     committeeCapabilities,
