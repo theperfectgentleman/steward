@@ -105,7 +105,7 @@ export async function buildAttentionItems(
         kind: "REVIEW",
         urgency: "NOW",
         title: task.title,
-        subtitle: `Awaiting your review · ${task.committee.name}`,
+        subtitle: `Awaiting your review · ${task.committee?.name ?? "Committee"}`,
         href: tasksPath(task.committeeId, {
           taskId: task.id,
           filter: "waiting-review",
