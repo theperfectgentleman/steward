@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Building2, LogOut, ArrowLeftRight } from "lucide-react";
+import { NavIcon } from "@/components/layout/NavIcon";
 import { useApp } from "@/providers/AppProvider";
 import { OverflowDots } from "@/components/OverflowDots";
 import { CreateOrgSheet } from "@/components/CreateOrgSheet";
@@ -25,7 +26,8 @@ function committeeTitleLabel(
 
 export function UserMenu() {
   const { user, logout, leaveOrganization } = useApp();
-  const { committees } = useNavModel();
+  const { committees, model } = useNavModel();
+  const adminLinks = model?.admin ?? [];
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -167,6 +169,29 @@ export function UserMenu() {
                   );
                 })}
               </ul>
+            </div>
+          )}
+
+          {adminLinks.length > 0 && (
+            <div className="border-b border-charcoal/10 py-1">
+              <p className="px-4 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-muted">
+                Org admin
+              </p>
+              {adminLinks.map((link) => (
+                <Link
+                  key={link.key}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-sm font-semibold text-charcoal hover:bg-surface touch-target"
+                >
+                  <NavIcon
+                    name={link.icon}
+                    className="h-5 w-5 text-muted"
+                    strokeWidth={1.75}
+                  />
+                  {link.label}
+                </Link>
+              ))}
             </div>
           )}
 

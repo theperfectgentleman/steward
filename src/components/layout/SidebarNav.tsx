@@ -72,6 +72,20 @@ export function SidebarNav() {
             );
           })}
         </div>
+        {model.flags.showAdmin && model.admin.length > 0 && (
+          <div className="space-y-0.5 border-t border-white/10 pt-3">
+            <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">
+              Admin
+            </p>
+            {model.admin.map((item) => (
+              <NavItem
+                key={item.key}
+                item={item}
+                active={linkActive(pathname, item.href)}
+              />
+            ))}
+          </div>
+        )}
       </nav>
     </aside>
   );
