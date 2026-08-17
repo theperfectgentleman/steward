@@ -14,7 +14,7 @@ import {
 } from "@/lib/event-kinds";
 import { eventsPath, eventPath } from "@/lib/navigation";
 import { formatDateTimeWithWeekday } from "@/lib/dates";
-import { formatGroupRoleLabel } from "@/lib/work-context";
+import { formatGroupRoleLabel } from "@/lib/work-context-client";
 import {
   SCHEDULE_FORMAT_LABELS,
   type PermissionUser,

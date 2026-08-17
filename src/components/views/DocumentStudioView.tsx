@@ -16,7 +16,7 @@ import {
 } from "@/lib/documents";
 import { formatDate } from "@/lib/dates";
 import { resolveLibraryFileHref } from "@/lib/document-urls";
-import { formatGroupRoleLabel } from "@/lib/work-context";
+import { formatGroupRoleLabel } from "@/lib/work-context-client";
 import { PageShimmer } from "@/components/loading/PageShimmer";
 import { UniverEditorContainer } from "@/components/univer/UniverEditorContainer";
 import { useApp } from "@/providers/AppProvider";

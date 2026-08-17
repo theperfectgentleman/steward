@@ -23,7 +23,7 @@ import {
 } from "@/lib/types";
 import { toPermissionUser } from "@/lib/permissions-client";
 import { KANBAN_COLUMNS } from "@/lib/kanban";
-import { formatGroupRoleLabel } from "@/lib/work-context";
+import { formatGroupRoleLabel } from "@/lib/work-context-client";
 import { documentsPath, taskPath } from "@/lib/navigation";
 import { LayoutGrid, List, Plus, X } from "lucide-react";
 

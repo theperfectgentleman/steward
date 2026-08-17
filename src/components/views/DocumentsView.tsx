@@ -26,7 +26,7 @@ import { formatDate, formatDateWithWeekday } from "@/lib/dates";
 import { resolveLibraryFileHref } from "@/lib/document-urls";
 import { canViewAllCommittees, canManageTor } from "@/lib/types";
 import { isAllGroups } from "@/lib/navigation";
-import { formatGroupRoleLabel } from "@/lib/work-context";
+import { formatGroupRoleLabel } from "@/lib/work-context-client";
 
 type LibraryDoc = {
   id: string;

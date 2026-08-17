@@ -17,7 +17,7 @@ import { FORM_FIELD_CLASS, FORM_TEXTAREA_CLASS } from "@/lib/form-field";
 import { toInputDateValue, formatDate } from "@/lib/dates";
 import { taskPath, tasksPath } from "@/lib/navigation";
 import { toPermissionUser } from "@/lib/permissions-client";
-import { formatGroupRoleLabel } from "@/lib/work-context";
+import { formatGroupRoleLabel } from "@/lib/work-context-client";
 import {
   canEditTasks,
   isCommitteeReadOnly,
