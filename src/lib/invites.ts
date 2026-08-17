@@ -9,7 +9,12 @@ import type {
   SupervisoryTitle,
 } from "@/lib/types";
 import { logActivity } from "@/lib/activity";
-import { supervisoryTitleTemplateKey } from "@/lib/role-capabilities";
+import {
+  defaultCapsForTemplateKey,
+  parseRoleCapabilities,
+  roleCapabilitiesAreSet,
+  supervisoryTitleTemplateKey,
+} from "@/lib/role-capabilities";
 import {
   isValidEmail,
   isValidPhone,
@@ -278,15 +283,13 @@ export async function createSupervisoryInvite(input: CreateSupervisoryInviteInpu
       },
     },
   });
-  const caps = template?.capabilities;
-  const canViewAll =
-    caps && typeof caps === "object" && !Array.isArray(caps)
-      ? (caps as { canViewAll?: boolean }).canViewAll === true
-      : isHead || input.title === "SECRETARY";
-  const canApproveOptional =
-    caps && typeof caps === "object" && !Array.isArray(caps)
-      ? (caps as { canApproveOptional?: boolean }).canApproveOptional === true
-      : isHead || input.title === "SECRETARY";
+  const caps = parseRoleCapabilities(
+    roleCapabilitiesAreSet(template?.capabilities)
+      ? template?.capabilities
+      : defaultCapsForTemplateKey(roleTemplateKey),
+  );
+  const canViewAll = caps.canViewAll;
+  const canApproveOptional = caps.canApproveOptional;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   const place =

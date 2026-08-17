@@ -154,6 +154,18 @@ export function parseRoleCapabilities(value: unknown): RoleCapabilities {
   };
 }
 
+/** True when the JSON actually set at least one known flag. `{}` is unset. */
+export function roleCapabilitiesAreSet(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  return ROLE_CAPABILITY_KEYS.some((key) => key in raw);
+}
+
+export function defaultCapsForTemplateKey(key: string): RoleCapabilities {
+  const seed = DEFAULT_ROLE_TEMPLATE_SEEDS.find((t) => t.key === key);
+  return seed?.capabilities ?? EMPTY_ROLE_CAPABILITIES;
+}
+
 export function committeeTitleTemplateKey(title: CommitteeTitle): string {
   if (title === "CUSTOM") return "MEMBER";
   return title;
@@ -173,6 +185,8 @@ export function capsFromTemplates(
   key: string,
 ): RoleCapabilities {
   const match = templates.find((t) => t.key === key);
-  if (!match) return EMPTY_ROLE_CAPABILITIES;
+  if (!match || !roleCapabilitiesAreSet(match.capabilities)) {
+    return defaultCapsForTemplateKey(key);
+  }
   return parseRoleCapabilities(match.capabilities);
 }

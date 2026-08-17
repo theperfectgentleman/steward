@@ -69,10 +69,11 @@ function toPermissionUser(user: SessionUser): PermissionUser {
           title: supervisory.title,
           customTitle: supervisory.customTitle,
           canViewAll:
-            supervisoryCapabilities?.canViewAll ?? supervisory.canViewAll,
+            supervisoryCapabilities.canViewAll ||
+            supervisory.canViewAll === true,
           canApproveOptional:
-            supervisoryCapabilities?.canApproveOptional ??
-            supervisory.canApproveOptional,
+            supervisoryCapabilities.canApproveOptional ||
+            supervisory.canApproveOptional === true,
         }
       : null,
     committeeCapabilities,

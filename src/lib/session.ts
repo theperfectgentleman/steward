@@ -156,10 +156,11 @@ export function toSessionPayload(user: UserWithRelations) {
           title: (supervisory.title as "HEAD" | "SECRETARY" | "MEMBER" | "CUSTOM") ?? (supervisory.isHead ? "HEAD" : "MEMBER"),
           customTitle: supervisory.customTitle ?? null,
           canViewAll:
-            supervisoryCapabilities?.canViewAll ?? supervisory.canViewAll,
+            supervisoryCapabilities.canViewAll ||
+            supervisory.canViewAll === true,
           canApproveOptional:
-            supervisoryCapabilities?.canApproveOptional ??
-            supervisory.canApproveOptional,
+            supervisoryCapabilities.canApproveOptional ||
+            supervisory.canApproveOptional === true,
         }
       : null,
     committeeCapabilities,

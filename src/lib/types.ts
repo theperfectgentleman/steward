@@ -265,12 +265,20 @@ export function isSupervisoryHead(user: PermissionUser): boolean {
   return s?.isHead === true || s?.title === "HEAD";
 }
 
+/** GO / GS (or the org's Head and Secretary titles). They see every group. */
+export function isGovernanceLead(user: PermissionUser): boolean {
+  const s = supervisory(user);
+  if (!s) return false;
+  return s.isHead === true || s.title === "HEAD" || s.title === "SECRETARY";
+}
+
 export function isSupervisorySecretary(user: PermissionUser): boolean {
   return supervisory(user)?.title === "SECRETARY";
 }
 
 export function canViewAllCommittees(user: PermissionUser): boolean {
   if (isOrgAdmin(user) || isOrgTech(user)) return true;
+  if (isGovernanceLead(user)) return true;
   if (user.supervisoryCapabilities?.canViewAll) return true;
   const s = supervisory(user);
   if (s?.canViewAll) return true;
@@ -279,6 +287,7 @@ export function canViewAllCommittees(user: PermissionUser): boolean {
 
 export function canOptionallyApprove(user: PermissionUser): boolean {
   if (isOrgAdmin(user)) return true;
+  if (isGovernanceLead(user)) return true;
   if (user.supervisoryCapabilities?.canApproveOptional) return true;
   const s = supervisory(user);
   return Boolean(s?.canApproveOptional);
@@ -369,6 +378,7 @@ export function canManageTor(
 /** Create directive (supervisory-issued) tasks */
 export function canCreateDirective(user: PermissionUser): boolean {
   if (isOrgAdmin(user)) return true;
+  if (isGovernanceLead(user)) return true;
   if (user.supervisoryCapabilities?.canCreateDirective) return true;
   return false;
 }

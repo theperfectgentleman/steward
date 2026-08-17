@@ -44,6 +44,7 @@ function CommitteeList({
   onPick,
   onPickAll,
   committeeLabel,
+  allLabel,
 }: {
   committees: CommitteeRef[];
   activeId: string | null;
@@ -53,6 +54,7 @@ function CommitteeList({
   onPick: (c: CommitteeRef) => void;
   onPickAll: () => void;
   committeeLabel: string;
+  allLabel: string;
 }) {
   const filtered = committees.filter((c) =>
     c.name.toLowerCase().includes(query.toLowerCase()),
@@ -84,7 +86,7 @@ function CommitteeList({
             <span className="w-9 h-9 flex items-center justify-center rounded-lg bg-surface text-accent font-bold text-xs shrink-0">
               All
             </span>
-            <span>All my groups</span>
+            <span>{allLabel}</span>
           </button>
         </li>
         {filtered.map((c) => (
@@ -215,7 +217,8 @@ export function CommitteeSelector() {
     setQuery("");
   };
 
-  const label = onAll ? "All my groups" : active?.name ?? `Select ${committeeLabel.toLowerCase()}`;
+  const allLabel = canViewAllCommittees(perm) ? "All groups" : "All my groups";
+  const label = onAll ? allLabel : active?.name ?? `Select ${committeeLabel.toLowerCase()}`;
   const letter = onAll ? "All" : active?.charterLetter ?? "?";
 
   return (
@@ -251,6 +254,7 @@ export function CommitteeSelector() {
             onPick={pick}
             onPickAll={pickAll}
             committeeLabel={committeeLabel}
+            allLabel={allLabel}
           />
         </div>
       )}
@@ -273,6 +277,7 @@ export function CommitteeSelector() {
             onPick={pick}
             onPickAll={pickAll}
             committeeLabel={committeeLabel}
+            allLabel={allLabel}
           />
         </BottomSheet>
       </div>
