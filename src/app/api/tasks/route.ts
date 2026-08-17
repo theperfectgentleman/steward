@@ -21,7 +21,7 @@ import {
   assertCommitteeMatchesOrg,
   assertTaskRefsInOrg,
   requireCommitteeForWorkClass,
-} from "@/lib/work-context";
+} from "@/lib/work-context.server";
 
 export async function GET(request: Request) {
   const auth = await requireActiveOrg();

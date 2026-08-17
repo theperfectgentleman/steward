@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { asPermissionUser, requireActiveOrg, requireRoles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOrgSettings } from "@/lib/settings";
-import { assertCommitteeDeletable } from "@/lib/work-context";
+import { assertCommitteeDeletable } from "@/lib/work-context.server";
 import { canManageCommitteeConfig, canViewAllCommittees } from "@/lib/types";
 
 export async function GET(request: Request) {
