@@ -5,7 +5,11 @@ import {
   getDocumentCapabilities,
   loadDocumentForOrg,
 } from "@/lib/document-access";
-import { getCollabWsUrl, signCollabToken } from "@/lib/collab-token";
+import {
+  getCollabWsUrl,
+  isCollabDisabled,
+  signCollabToken,
+} from "@/lib/collab-token";
 
 export async function POST(
   _request: Request,
@@ -13,6 +17,14 @@ export async function POST(
 ) {
   const auth = await requireActiveOrg();
   if (auth.error) return auth.error;
+
+  if (isCollabDisabled()) {
+    return NextResponse.json({
+      mode: "local",
+      disabled: true,
+      reason: "DISABLE_COLLAB",
+    });
+  }
 
   const { id } = await params;
   const doc = await loadDocumentForOrg(id, auth.org.organizationId);
@@ -31,6 +43,7 @@ export async function POST(
   });
 
   return NextResponse.json({
+    mode: "live",
     token,
     wsUrl: getCollabWsUrl(),
     canWrite,
