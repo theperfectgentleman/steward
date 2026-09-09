@@ -32,6 +32,7 @@ Shipped in this tree (grounded in code, not the stale README-only MVP story):
 - Invites upsert an **org seat** (`OrganizationMembership`) then a committee or supervisory role — [src/lib/invites.ts](./src/lib/invites.ts) (`upsertSeat`)
 - ICGC church demo seed (19 charter committees, GO/GS hats, sanctuary-seats walkthrough) — [prisma/seed.ts](./prisma/seed.ts), [src/lib/committees.ts](./src/lib/committees.ts)
 - Optional collab (Hocuspocus/Yjs :1234), R2 uploads, Brevo/OTP, Groq suggest-then-accept AI — [docs/DEPLOY.md](./docs/DEPLOY.md), [.env.example](./.env.example)
+- Docs live co-edit path: `npm run dev:all` (Next + `scripts/collab-server.cjs`); collab-token API; editor shows **Live sync** after Yjs sync (not a 2.5s local fallback). `DISABLE_COLLAB=1` is immediate local mode.
 
 Demo login after `npm run db:setup`: pick **ICGC** on the org picker. Platform Super: `admin@unitycommit.org` → `/super`.
 
@@ -77,7 +78,7 @@ Default: free-to-use for ICGC demo; money from org licenses when Super + meterin
 | Super | [src/app/super](./src/app/super), [src/app/api/super](./src/app/api/super) |
 | Deploy | [docs/DEPLOY.md](./docs/DEPLOY.md), `Dockerfile`, `docker-compose.yml` |
 
-Stack: Next.js 16 + React 19 + Tailwind 4, Prisma 7 + Postgres, PWA. Local: `npm install && npm run db:setup && npm run dev` (collab: `npm run dev:all`).
+Stack: Next.js 16 + React 19 + Tailwind 4, Prisma 7 + Postgres, PWA. Local: `npm install && npm run db:setup && npm run dev` (collab: `npm run dev:all`). `npm test` covers collab token/connect helpers.
 
 ## How to continue
 
@@ -85,6 +86,7 @@ Stack: Next.js 16 + React 19 + Tailwind 4, Prisma 7 + Postgres, PWA. Local: `npm
 2. When Super is stable, meter seats: count `OrganizationMembership` per org; enforce on invite/accept in [src/lib/invites.ts](./src/lib/invites.ts); surface usage on `/super` and Org Admin.
 3. Record a real live host in this file only after it exists.
 4. Prefer reseed / delete / redirect over dual-write (demo policy in SIMPLIFICATION.md).
+5. Doc live co-edit: `npm run dev:all` (Next + Hocuspocus :1234). Same `COLLAB_TOKEN_SECRET` for both processes; `COLLAB_WS_URL` must be reachable from the browser (`ws://localhost:1234` local, `wss://…` in prod). Token route + editor live in [src/app/api/documents/[id]/collab-token](./src/app/api/documents/[id]/collab-token/route.ts) and [src/components/editor/CollaborativeDocEditor.tsx](./src/components/editor/CollaborativeDocEditor.tsx).
 
 ## Rules for agents
 

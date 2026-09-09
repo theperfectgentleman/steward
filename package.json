@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:collab": "node scripts/collab-server.cjs",
-    "dev:all": "npx concurrently -k \"npm run dev\" \"npm run dev:collab\"",
+    "dev:all": "npx concurrently -k -n next,collab -c blue,magenta \"npm run dev\" \"npm run dev:collab\"",
+    "test": "tsx --test src/lib/collab-token.test.ts src/lib/collab-connect.test.ts src/lib/document-presence.test.ts && node --test scripts/collab-server.test.cjs",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -63,6 +64,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.4",
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",

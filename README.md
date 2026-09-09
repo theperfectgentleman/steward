@@ -11,10 +11,13 @@ Agent landing: [AGENT.md](./AGENT.md). History: [CHANGELOG.md](./CHANGELOG.md).
 ```bash
 npm install
 npm run db:setup
-npm run dev
+npm run dev          # Next only (Docs fall back to local editing)
+npm run dev:all      # Next + Hocuspocus collab on :1234
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and sign in with a demo profile.
+
+Live document co-edit needs `npm run dev:all` (or Docker ports 3000+1234). Copy `.env.example` to `.env` so `COLLAB_TOKEN_SECRET` and `COLLAB_WS_URL=ws://localhost:1234` are shared by Next and `scripts/collab-server.cjs`. See [docs/DEPLOY.md](./docs/DEPLOY.md).
 
 ## Demo Accounts
 
