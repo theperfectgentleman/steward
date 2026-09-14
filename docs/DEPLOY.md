@@ -8,6 +8,8 @@ The Docker image runs:
 
 Started by `scripts/docker-entrypoint.js` after `prisma migrate deploy`.
 
+After changing the Dockerfile (especially collab runtime deps), trigger a **full image rebuild and redeploy** on Dokploy so the runner stage re-runs `npm install` and the collab smoke check. A restart-only deploy reuses the old image and will not pick up the fix.
+
 ## Dokploy checklist
 
 1. Publish / expose ports **3000** and **1234** (or reverse-proxy both).
