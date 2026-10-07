@@ -1,9 +1,21 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { rewriteUnreachableListenHost } from "@/lib/collab-connect";
 
-const COLLAB_SECRET =
-  process.env.COLLAB_TOKEN_SECRET ||
-  process.env.SESSION_SECRET ||
-  "steward-collab-dev-secret";
+/** Dev fallback — keep in sync with scripts/collab-server.cjs */
+export const COLLAB_DEV_SECRET = "steward-collab-dev-secret";
+
+export function getCollabSecret() {
+  return (
+    process.env.COLLAB_TOKEN_SECRET ||
+    process.env.SESSION_SECRET ||
+    COLLAB_DEV_SECRET
+  );
+}
+
+export function isCollabDisabled() {
+  const v = process.env.DISABLE_COLLAB;
+  return v === "1" || v === "true";
+}
 
 export type CollabTokenPayload = {
   documentId: string;
@@ -27,20 +39,27 @@ function fromB64url(input: string) {
   return Buffer.from(b64, "base64");
 }
 
-export function signCollabToken(payload: Omit<CollabTokenPayload, "exp">, ttlSec = 3600) {
+export function signCollabToken(
+  payload: Omit<CollabTokenPayload, "exp">,
+  ttlSec = 3600,
+  secret = getCollabSecret(),
+) {
   const body: CollabTokenPayload = {
     ...payload,
     exp: Math.floor(Date.now() / 1000) + ttlSec,
   };
   const data = b64url(JSON.stringify(body));
-  const sig = createHmac("sha256", COLLAB_SECRET).update(data).digest();
+  const sig = createHmac("sha256", secret).update(data).digest();
   return `${data}.${b64url(sig)}`;
 }
 
-export function verifyCollabToken(token: string): CollabTokenPayload | null {
-  const [data, sig] = token.split(".");
+export function verifyCollabToken(
+  token: string,
+  secret = getCollabSecret(),
+): CollabTokenPayload | null {
+  const [data, sig] = String(token || "").split(".");
   if (!data || !sig) return null;
-  const expected = createHmac("sha256", COLLAB_SECRET).update(data).digest();
+  const expected = createHmac("sha256", secret).update(data).digest();
   const actual = fromB64url(sig);
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
     return null;
@@ -56,10 +75,9 @@ export function verifyCollabToken(token: string): CollabTokenPayload | null {
 }
 
 export function getCollabWsUrl() {
-  // Prefer server runtime URL (Dokploy/Docker), then public build-time URL, then local default.
-  return (
+  const raw =
     process.env.COLLAB_WS_URL ||
     process.env.NEXT_PUBLIC_COLLAB_WS_URL ||
-    "ws://localhost:1234"
-  );
+    "ws://localhost:1234";
+  return rewriteUnreachableListenHost(raw);
 }

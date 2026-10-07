@@ -27,6 +27,12 @@ import {
   type PresenceConnection,
   type PresencePerson,
 } from "@/lib/document-presence";
+import {
+  COLLAB_CONNECT_TIMEOUT_MS,
+  COLLAB_SYNC_TIMEOUT_MS,
+  decideCollabConnect,
+  shouldAbandonLiveConnect,
+} from "@/lib/collab-connect";
 
 export type { PresencePerson };
 
@@ -87,63 +93,126 @@ export function CollaborativeDocEditor({
 }) {
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<HocuspocusProvider | null>(null);
-  const deviceRef = useRef(detectDeviceKind());
-  const [connected, setConnected] = useState(false);
+  const [device] = useState(detectDeviceKind);
+  const [synced, setSynced] = useState(false);
   const [fallback, setFallback] = useState(false);
   const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
 
   useEffect(() => {
-    onSyncState?.(fallback ? "local" : connected ? "live" : "connecting");
-  }, [fallback, connected, onSyncState]);
+    onSyncState?.(fallback ? "local" : synced ? "live" : "connecting");
+  }, [fallback, synced, onSyncState]);
 
   useEffect(() => {
     let cancelled = false;
+    let abandoned = false;
+    let connectTimer: number | undefined;
+    let syncTimer: number | undefined;
+    let everConnected = false;
     const ydocLocal = new Y.Doc();
     ydocRef.current = ydocLocal;
+
+    const giveUp = (hp?: HocuspocusProvider | null) => {
+      if (cancelled || abandoned) return;
+      abandoned = true;
+      if (connectTimer) window.clearTimeout(connectTimer);
+      if (syncTimer) window.clearTimeout(syncTimer);
+      setFallback(true);
+      setSynced(false);
+      setProvider(null);
+      if (hp && providerRef.current === hp) {
+        providerRef.current = null;
+      }
+      try {
+        hp?.destroy();
+      } catch {
+        /* ignore */
+      }
+    };
 
     (async () => {
       try {
         const res = await fetch(`/api/documents/${documentId}/collab-token`, {
           method: "POST",
+          credentials: "include",
         });
-        if (!res.ok) throw new Error("collab token failed");
-        const data = (await res.json()) as {
-          token: string;
-          wsUrl: string;
-          canWrite: boolean;
-        };
-
+        const data: unknown = await res.json().catch(() => null);
         if (cancelled) return;
 
+        const decision = decideCollabConnect(res.status, data);
+        if (decision.action === "local") {
+          giveUp();
+          return;
+        }
+
         const hp = new HocuspocusProvider({
-          url: data.wsUrl,
+          url: decision.wsUrl,
           name: documentId,
           document: ydocLocal,
-          token: data.token,
-          onConnect: () => setConnected(true),
-          onDisconnect: () => setConnected(false),
-          onAuthenticationFailed: () => setFallback(true),
+          token: () => decision.token,
+          connect: true,
+          onConnect: () => {
+            everConnected = true;
+            if (connectTimer) window.clearTimeout(connectTimer);
+          },
+          onDisconnect: () => {
+            if (!cancelled) setSynced(false);
+          },
+          onSynced: ({ state }) => {
+            if (cancelled || !state) return;
+            if (connectTimer) window.clearTimeout(connectTimer);
+            if (syncTimer) window.clearTimeout(syncTimer);
+            setFallback(false);
+            setSynced(true);
+          },
+          onAuthenticationFailed: () => {
+            giveUp(hp);
+          },
         });
 
-        const timer = window.setTimeout(() => {
-          if (!hp.synced && !cancelled) {
-            setFallback(true);
+        connectTimer = window.setTimeout(() => {
+          if (
+            shouldAbandonLiveConnect({
+              cancelled,
+              synced: hp.synced,
+              everConnected,
+              requireConnection: true,
+            })
+          ) {
+            giveUp(hp);
           }
-        }, 2500);
+        }, COLLAB_CONNECT_TIMEOUT_MS);
+
+        syncTimer = window.setTimeout(() => {
+          if (
+            shouldAbandonLiveConnect({
+              cancelled,
+              synced: hp.synced,
+              everConnected,
+              requireConnection: false,
+            })
+          ) {
+            giveUp(hp);
+          }
+        }, COLLAB_SYNC_TIMEOUT_MS);
+
+        if (cancelled || abandoned) {
+          hp.destroy();
+          return;
+        }
 
         providerRef.current = hp;
         setProvider(hp);
         setYdoc(ydocLocal);
-
-        return () => clearTimeout(timer);
       } catch {
-        if (!cancelled) setFallback(true);
+        if (!cancelled) giveUp();
       }
     })();
 
     return () => {
       cancelled = true;
+      if (connectTimer) window.clearTimeout(connectTimer);
+      if (syncTimer) window.clearTimeout(syncTimer);
       providerRef.current?.destroy();
       ydocLocal.destroy();
       providerRef.current = null;
@@ -152,7 +221,6 @@ export function CollaborativeDocEditor({
   }, [documentId]);
 
   const useCollab = Boolean(ydoc && provider && !fallback);
-  const device = deviceRef.current;
   const userColor = colorForUserId(userId);
 
   const editor = useEditor(
@@ -371,7 +439,7 @@ export function CollaborativeDocEditor({
         <span className="ml-auto pr-2 text-[11px] text-muted">
           {fallback
             ? "Local editing"
-            : connected
+            : synced
               ? "Live sync"
               : "Connecting…"}
         </span>

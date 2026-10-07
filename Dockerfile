@@ -45,17 +45,28 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Prisma CLI + collab runtime deps (not in Next standalone)
-# Pin versions to match package.json where practical
-RUN npm install \
+COPY scripts/verify-collab-runtime-deps.cjs /app/scripts/verify-collab-runtime-deps.cjs
+
+# Prisma CLI + collab runtime deps (not in Next standalone).
+# Standalone file tracing can leave package.json-only stubs (e.g. postgres-array) that
+# npm will not re-extract; @prisma/adapter-pg then crashes collab-server at require() time.
+# Pin versions to match package.json where practical.
+RUN rm -rf \
+    node_modules/postgres-array \
+    node_modules/postgres-bytea \
+    node_modules/postgres-date \
+    node_modules/postgres-interval \
+  && npm install \
     prisma@7.8.0 \
     dotenv \
     @hocuspocus/server@2.15.3 \
     yjs@13.6.31 \
     @prisma/adapter-pg@7.8.0 \
     @prisma/client-runtime-utils@7.8.0 \
-    pg \
+    postgres-array@3.0.4 \
+    pg@8.22.0 \
     --ignore-scripts \
+  && node /app/scripts/verify-collab-runtime-deps.cjs \
   && npm cache clean --force \
   && chown -R nextjs:nodejs /app/node_modules
 

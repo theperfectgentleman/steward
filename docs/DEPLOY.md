@@ -8,6 +8,8 @@ The Docker image runs:
 
 Started by `scripts/docker-entrypoint.js` after `prisma migrate deploy`.
 
+After changing the Dockerfile (especially collab runtime deps), trigger a **full image rebuild and redeploy** on Dokploy so the runner stage re-runs `npm install` and the collab smoke check. A restart-only deploy reuses the old image and will not pick up the fix.
+
 ## Dokploy checklist
 
 1. Publish / expose ports **3000** and **1234** (or reverse-proxy both).
@@ -50,7 +52,20 @@ location / {
 ```
 
 4. Redeploy the image after setting `COLLAB_WS_URL` (runtime; no rebuild required for this var).
-5. Verify: open a document → live co-edit connects; upload a file → no 503.
+5. Verify: `curl -fsS http://127.0.0.1:1234/` returns `OK`; open a document → toolbar **Live sync** (not stuck on Connecting / Local editing); upload a file → no 503.
+
+### Env checklist (collab)
+
+Same secret must be visible to **both** Next and `scripts/collab-server.cjs`:
+
+| Variable | Local | Prod |
+|----------|--------|------|
+| `COLLAB_TOKEN_SECRET` | Yes (copy `.env.example`) | Yes — long random, stable across restarts |
+| `COLLAB_WS_URL` | `ws://localhost:1234` | Public `wss://…` the **browser** can open |
+| `COLLAB_PORT` | `1234` | In-container listen port |
+| `DISABLE_COLLAB` | unset | `1` only to force local-only editors |
+
+`npm run dev:all` runs Next + collab. If `COLLAB_TOKEN_SECRET` lives only in `.env.local`, both still match now (collab-server loads `.env.local`). Prefer `.env` so Docker/Dokploy see it too.
 
 ## Local Docker
 
@@ -64,7 +79,18 @@ Compose maps `3000` and `1234`. Default `COLLAB_WS_URL=ws://localhost:1234`.
 
 ## Disable collab
 
-Set `DISABLE_COLLAB=1` if you only want the Next app (editors fall back to local mode).
+Set `DISABLE_COLLAB=1` if you only want the Next app. The collab-token API then returns `{ mode: "local" }` and editors skip the WebSocket instead of hanging on Connecting.
+
+## Local verify (`npm run dev:all`)
+
+```bash
+# .env has COLLAB_TOKEN_SECRET + COLLAB_WS_URL=ws://localhost:1234
+npm run db:setup
+npm run dev:all
+curl -fsS http://127.0.0.1:1234/   # expect: OK
+```
+
+Sign in → Docs → open a rich-text document. Toolbar should read **Live sync** within a few seconds. A second browser/profile on the same doc should show carets and incoming edits. `DISABLE_COLLAB=1 npm run dev` should show **Local editing** immediately (no Connecting hang).
 
 ## Cloudflare R2 (document files)
 
