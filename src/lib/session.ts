@@ -143,6 +143,7 @@ export function toSessionPayload(user: UserWithRelations) {
       ? {
           id: user.orgContext.organizationId,
           name: user.orgContext.organizationName,
+          slug: user.orgContext.organizationSlug,
           status: user.orgContext.organizationStatus,
           orgRole: user.orgContext.orgRole,
           settings: user.orgContext.settings,

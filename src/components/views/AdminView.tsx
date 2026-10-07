@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TouchButton } from "@/components/TouchButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { InviteMemberSheet } from "@/components/InviteMemberSheet";
+import { EditOrgSheet } from "@/components/EditOrgSheet";
 import { PeoplePickerField } from "@/components/people/PeoplePickerField";
 import { useApp } from "@/providers/AppProvider";
 import { USER_ROLE_LABELS, isOrgAdmin, SUPERVISORY_TITLE_LABELS, type SupervisoryTitle, type UserRole } from "@/lib/types";
@@ -68,6 +69,7 @@ export function AdminView() {
   });
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteCommitteeId, setInviteCommitteeId] = useState<string | null>(null);
+  const [editOrgOpen, setEditOrgOpen] = useState(false);
 
   const refresh = () => {
     fetch("/api/users").then((r) => r.json()).then(setUsers);
@@ -205,6 +207,13 @@ export function AdminView() {
           Users, structure, RBAC, supervisory roster & committee config
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setEditOrgOpen(true)}
+            className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold hover:bg-surface cursor-pointer transition-colors"
+          >
+            Edit organization
+          </button>
           <a
             href="/admin/structure"
             className="rounded-xl border border-charcoal/15 px-4 py-2 text-sm font-semibold"
@@ -275,6 +284,11 @@ export function AdminView() {
         committeeName={
           committees.find((c) => c.id === inviteCommitteeId)?.name
         }
+      />
+
+      <EditOrgSheet
+        open={editOrgOpen}
+        onClose={() => setEditOrgOpen(false)}
       />
 
       <section className="rounded-2xl border border-accent/20 bg-accent/5 p-4">

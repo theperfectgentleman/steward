@@ -240,3 +240,18 @@ export async function listUserOrganizations(userId: string) {
     };
   });
 }
+
+export async function updateOrganizationName(input: {
+  organizationId: string;
+  name: string;
+}) {
+  const trimmed = input.name.trim();
+  if (!trimmed) {
+    throw new Error("Organization name cannot be empty");
+  }
+  return prisma.organization.update({
+    where: { id: input.organizationId },
+    data: { name: trimmed },
+  });
+}
+

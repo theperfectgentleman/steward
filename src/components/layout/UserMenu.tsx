@@ -7,13 +7,17 @@ import { NavIcon } from "@/components/layout/NavIcon";
 import { useApp } from "@/providers/AppProvider";
 import { OverflowDots } from "@/components/OverflowDots";
 import { CreateOrgSheet } from "@/components/CreateOrgSheet";
+import { EditOrgSheet } from "@/components/EditOrgSheet";
 import { useNavModel } from "@/hooks/useNavModel";
 import {
   COMMITTEE_TITLE_LABELS,
   SUPERVISORY_TITLE_LABELS,
+  isOrgAdmin,
+  isOrgTech,
   type CommitteeTitle,
   type SupervisoryTitle,
 } from "@/lib/types";
+import { toPermissionUser } from "@/lib/permissions-client";
 import { committeePath } from "@/lib/navigation";
 
 function committeeTitleLabel(
@@ -30,7 +34,15 @@ export function UserMenu() {
   const adminLinks = model?.admin ?? [];
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const perm = user ? toPermissionUser(user) : null;
+  const canEditOrg = Boolean(
+    user?.organization &&
+      (user.isPlatformAdmin ||
+        (perm && (isOrgAdmin(perm) || isOrgTech(perm)))),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -127,9 +139,23 @@ export function UserMenu() {
             </div>
             <OverflowDots
               items={[
+                ...(canEditOrg
+                  ? [
+                      {
+                        label: "Edit organization",
+                        onClick: () => {
+                          setOpen(false);
+                          setEditOpen(true);
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   label: "Create organization",
-                  onClick: () => setCreateOpen(true),
+                  onClick: () => {
+                    setOpen(false);
+                    setCreateOpen(true);
+                  },
                 },
               ]}
             />
@@ -232,6 +258,7 @@ export function UserMenu() {
         </div>
       )}
       <CreateOrgSheet open={createOpen} onClose={() => setCreateOpen(false)} />
+      <EditOrgSheet open={editOpen} onClose={() => setEditOpen(false)} />
     </div>
   );
 }

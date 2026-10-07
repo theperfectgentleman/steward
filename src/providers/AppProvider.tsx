@@ -42,6 +42,7 @@ export type SessionUser = {
   organization?: {
     id: string;
     name: string;
+    slug?: string;
     status: "ACTIVE" | "SUSPENDED";
     orgRole: OrganizationMemberRole;
     settings: OrganizationSettings;

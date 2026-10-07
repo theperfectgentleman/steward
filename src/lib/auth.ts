@@ -24,6 +24,7 @@ export type SessionUser = NonNullable<Awaited<ReturnType<typeof getSessionUser>>
 export type OrgContext = {
   organizationId: string;
   organizationName: string;
+  organizationSlug: string;
   organizationStatus: "ACTIVE" | "SUSPENDED";
   orgRole: OrganizationMemberRole;
   settings: {
@@ -146,6 +147,7 @@ export async function getSessionUser() {
       ? {
           organizationId: activeMembership.organizationId,
           organizationName: activeMembership.organization.name,
+          organizationSlug: activeMembership.organization.slug,
           organizationStatus: activeMembership.organization.status,
           orgRole: activeMembership.role,
           settings: {
