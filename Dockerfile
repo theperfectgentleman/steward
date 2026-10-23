@@ -2,7 +2,7 @@
 # Multi-stage build — run this in CI (GitHub Actions). Dokploy only pulls the final image.
 # Runtime starts Next.js (:3000) + Hocuspocus document collab (:1234) via docker-entrypoint.js
 
-FROM node:22-bookworm-slim AS deps
+FROM node:22.23.4-bookworm-slim AS deps
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -11,7 +11,7 @@ COPY package.json package-lock.json ./
 # Skip postinstall (prisma generate) — schema is not copied yet
 RUN npm install --ignore-scripts
 
-FROM node:22-bookworm-slim AS builder
+FROM node:22.23.4-bookworm-slim AS builder
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -26,7 +26,7 @@ ENV NODE_ENV=production
 ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/steward?schema=public"
 RUN npx prisma generate && npm run build
 
-FROM node:22-bookworm-slim AS runner
+FROM node:22.23.4-bookworm-slim AS runner
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl \
